@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Lector ePub · v44 (menú superior, sin barra inferior)</title>
+    <title>Lector ePub · v47 (hora a la derecha)</title>
 
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js">
     </script>
@@ -133,8 +133,14 @@
         }
         #header-right .stat-bold { font-weight: 700; }
         #ind-percent { font-weight: 400; font-size: 0.65rem; color: var(--text-secondary); }
+        #device-time {
+            font-weight: 400;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            margin-left: 2px;
+        }
 
-        /* Barra de progreso debajo del header */
         #progress-bar-container {
             height: var(--progress-height);
             background: #ddd;
@@ -157,7 +163,6 @@
             position: absolute; top: 0; width: 1px; height: 100%; background-color: #999; opacity: 0.5;
         }
 
-        /* Panel desplegable (botones + búsqueda) */
         #menu-panel {
             max-height: 0;
             overflow: hidden;
@@ -212,7 +217,6 @@
 
         .chapter-marker { height: 1px; margin: 0; padding: 0; background: transparent; }
 
-        /* Panel de resultados de búsqueda (overlay) */
         .search-results-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 20;
             display: flex; align-items: flex-start; justify-content: flex-start; padding: 20px;
@@ -232,7 +236,6 @@
         .search-result-item .highlight { background-color: #ffeb3b; font-weight: bold; }
         .search-result-item .meta { font-size: 0.7rem; color: var(--text-secondary); align-self: flex-end; }
 
-        /* Capítulos overlay */
         .chapters-overlay {
             position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 20;
             display: flex; align-items: flex-start; justify-content: flex-start; padding: 20px;
@@ -290,6 +293,7 @@
                 <span class="stat-bold" id="ind-pages-left-chapter">--</span>
                 <span class="stat-normal" id="ind-percent">--</span>
                 <span class="stat-bold" id="ind-pages-left-book">--</span>
+                <span id="device-time">--:--</span>
             </div>
         </div>
         <div id="progress-bar-container">
@@ -301,6 +305,7 @@
                 <button class="menu-btn" id="btn-back-library" title="Volver a la biblioteca">← <span>Bib.</span></button>
                 <button class="menu-btn" id="btn-search" title="Buscar">🔍</button>
                 <button class="menu-btn" id="btn-chapters" title="Índice de capítulos">☰ <span>Cap.</span></button>
+                <button class="menu-btn" id="btn-fullscreen" title="Pantalla completa">⛶</button>
             </div>
             <div id="search-row">
                 <input type="text" id="search-input" placeholder="Buscar..." />
@@ -309,7 +314,6 @@
             </div>
         </div>
         <div id="reader-container"></div>
-        <!-- overlays -->
         <div id="search-results-overlay" class="search-results-overlay">
             <div class="search-results-modal" id="search-results-modal">
                 <h3>Resultados</h3>
@@ -335,6 +339,7 @@
             const $readerContainer = $('#reader-container');
             const $menuPanel = $('#menu-panel');
             const $headerLeft = $('#header-left');
+            const $deviceTime = $('#device-time');
             const $headerCenter = $('#header-center');
             const $indPagesLeftChapter = $('#ind-pages-left-chapter');
             const $indPercent = $('#ind-percent');
@@ -346,6 +351,7 @@
             const $btnBackLibrary = $('#btn-back-library');
             const $btnChapters = $('#btn-chapters');
             const $btnSearch = $('#btn-search');
+            const $btnFullscreen = $('#btn-fullscreen');
             const $searchRow = $('#search-row');
             const $searchInput = $('#search-input');
             const $btnSearchResults = $('#btn-search-results');
@@ -356,7 +362,7 @@
             const $chaptersList = $('#chapters-list');
 
             // ---------- IndexedDB ----------
-            const DB_NAME = 'epub_reader_v44';
+            const DB_NAME = 'epub_reader_v47';
             const DB_VERSION = 1;
             let db = null;
 
@@ -386,6 +392,26 @@
             function extractFirstHeading(html) { const doc = new DOMParser().parseFromString(html,'text/html'); const h = doc.querySelector('h1,h2,h3,h4'); return h ? h.textContent.trim() : null; }
             function splitIntoPages(text, charsPerPage=2000) { const pages = []; if (!text?.length) return ['']; let rem = text; while (rem.length > charsPerPage) { let cut = charsPerPage; const slice = rem.substr(charsPerPage,120); const m = slice.match(/[\s.,;:!?¡¿—\-'"»)]/); if (m?.index !== undefined) cut = charsPerPage + m.index + 1; pages.push(rem.substring(0,cut).trim()); rem = rem.substring(cut).trim(); } if (rem) pages.push(rem.trim()); return pages.length ? pages : ['']; }
             function blobToBase64(blob) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onloadend = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); }); }
+
+            // ---------- Reloj ----------
+            function updateDeviceTime() {
+                const now = new Date();
+                const h = String(now.getHours()).padStart(2,'0');
+                const m = String(now.getMinutes()).padStart(2,'0');
+                $deviceTime.textContent = `${h}:${m}`;
+            }
+            updateDeviceTime();
+            setInterval(updateDeviceTime, 60000);
+
+            // ---------- Pantalla completa ----------
+            function toggleFullscreen() {
+                if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                    const el = document.documentElement;
+                    (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+                } else {
+                    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+                }
+            }
 
             // ---------- Procesar ePub ----------
             async function processEpub(arrayBuffer) {
@@ -686,7 +712,7 @@
                     if (!currentBookId) return;
                     const top = $readerContainer.scrollTop;
                     await dbSaveProgress(currentBookId, { globalPage:gPage, spineIndex:chIdx, pageInChapter:chPage, scrollTop:top, totalPages: currentBookData?.structure?.totalPages||0 });
-                    try { localStorage.setItem('last_progress_v44_'+currentBookId, JSON.stringify({ gPage, chIdx, chPage, top, ts: Date.now() })); } catch(e) {}
+                    try { localStorage.setItem('last_progress_v47_'+currentBookId, JSON.stringify({ gPage, chIdx, chPage, top, ts: Date.now() })); } catch(e) {}
                 }, 1000);
             }
 
@@ -706,7 +732,6 @@
                 const scrollHandler = () => { if (scrollRAF) return; scrollRAF = requestAnimationFrame(() => { scrollRAF = null; const st = container.scrollTop; if (Math.abs(st-lastScroll)>2) { lastScroll = st; if (!isRestoring) updatePositionFromScroll(); } }); };
                 container.addEventListener('scroll', scrollHandler, { passive:true }); container._scrollHandler = scrollHandler;
 
-                // El clic en el header muestra/oculta el menú
                 const header = document.getElementById('reader-header');
                 header.addEventListener('click', () => toggleMenuPanel());
 
@@ -774,6 +799,9 @@
 
             $btnBackLibrary.addEventListener('click', () => { if (saveTimer) { clearTimeout(saveTimer); if (lastRawData.globalPage>0 && currentBookId) dbSaveProgress(currentBookId, { globalPage:lastRawData.globalPage, spineIndex:lastRawData.chapterIdx, pageInChapter:lastRawData.chapterPage, scrollTop:$readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages||0 }); } closeReader(); });
 
+            // Pantalla completa
+            $btnFullscreen.addEventListener('click', toggleFullscreen);
+
             // ---------- Eventos ----------
             $uploadFab.addEventListener('click', () => $fileInput.click());
             $fileInput.addEventListener('change', async (e) => { const file = e.target.files[0]; if (!file) return; if (!file.name.toLowerCase().endsWith('.epub')) { alert('Solo archivos .epub'); $fileInput.value = ''; return; } const book = await uploadAndProcessBook(file); $fileInput.value = ''; if (book) renderLibrary(); });
@@ -781,7 +809,7 @@
             document.addEventListener('drop', async (e) => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file && file.name.endsWith('.epub')) { const book = await uploadAndProcessBook(file); if (book) renderLibrary(); } });
             window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage>0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage:lastRawData.globalPage, spineIndex:lastRawData.chapterIdx, pageInChapter:lastRawData.chapterPage, scrollTop:$readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages||0 }); } });
 
-            (async () => { await openDB(); await renderLibrary(); console.log('📚 Lector ePub v44 listo (menú superior, sin barra inferior)'); })().catch(err => console.error('Error inicial:', err));
+            (async () => { await openDB(); await renderLibrary(); console.log('📚 Lector ePub v47 listo (hora a la derecha)'); })().catch(err => console.error('Error inicial:', err));
         })();
     </script>
 </body>
