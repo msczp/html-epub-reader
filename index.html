@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Lector ePub · v43 (porcentaje igual al tiempo)</title>
+    <title>Lector ePub · v44 (menú superior, sin barra inferior)</title>
 
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js">
     </script>
@@ -22,7 +22,7 @@
             --radius: 14px;
             --safe-bottom: env(safe-area-inset-bottom, 0px);
             --progress-height: 4px;
-            --buttons-height: 46px;
+            --menu-height: 46px;
             --search-row-height: 40px;
         }
 
@@ -109,6 +109,7 @@
             padding: 0 12px; height: 25px;
             border-bottom: 1px solid var(--reader-border); box-shadow: none; z-index: 4;
             position: relative;
+            cursor: pointer;
         }
         #header-left {
             font-weight: 700; font-size: 0.7rem; color: var(--text);
@@ -133,16 +134,70 @@
         #header-right .stat-bold { font-weight: 700; }
         #ind-percent { font-weight: 400; font-size: 0.65rem; color: var(--text-secondary); }
 
+        /* Barra de progreso debajo del header */
+        #progress-bar-container {
+            height: var(--progress-height);
+            background: #ddd;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 3;
+        }
+        #progress-bar-fill {
+            height: 100%;
+            background: var(--accent);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 2px;
+            position: absolute; top: 0; left: 0;
+        }
+        #chapter-markers {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none;
+        }
+        .chapter-marker-item {
+            position: absolute; top: 0; width: 1px; height: 100%; background-color: #999; opacity: 0.5;
+        }
+
+        /* Panel desplegable (botones + búsqueda) */
+        #menu-panel {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            background: var(--reader-bar);
+            border-bottom: 1px solid transparent;
+            flex-shrink: 0;
+            z-index: 3;
+        }
+        #menu-panel.visible {
+            max-height: calc(var(--menu-height) + var(--search-row-height) + 8px);
+            border-bottom-color: var(--reader-border);
+        }
+        #menu-panel.search-active {
+            max-height: calc(var(--menu-height) + var(--search-row-height) + 8px);
+        }
+        #menu-buttons {
+            display: flex; align-items: center; justify-content: space-around; padding: 4px 0;
+        }
+        .menu-btn {
+            background: transparent; border: none; font-size: 1.4rem; color: var(--text);
+            padding: 2px 8px; cursor: pointer; display: flex; align-items: center; gap: 4px;
+        }
+        .menu-btn span { font-size: 0.75rem; }
+        #search-row {
+            display: flex; align-items: center; justify-content: center; padding: 4px 8px; gap: 6px;
+            background: var(--reader-bar);
+        }
+        #search-input {
+            flex: 1; border: 1px solid var(--reader-border); border-radius: 6px;
+            padding: 4px 8px; font-size: 0.85rem; background: #fff;
+        }
+
         #reader-container {
             flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative;
-            padding: 16px 18px; padding-bottom: calc(var(--progress-height) + var(--safe-bottom));
+            padding: 16px 18px; padding-bottom: var(--safe-bottom);
             font-family: 'Georgia', 'Palatino Linotype', serif; color: #1f1f1f;
             width: 100%; margin: 0 auto; word-wrap: break-word; overflow-x: hidden;
             background: var(--reader-bg); scrollbar-width: none; -ms-overflow-style: none;
-            transition: padding-bottom 0.3s ease;
         }
-        #reader-container.buttons-visible { padding-bottom: calc(var(--progress-height) + var(--buttons-height) + var(--safe-bottom)); }
-        #reader-container.search-visible { padding-bottom: calc(var(--progress-height) + var(--buttons-height) + var(--search-row-height) + var(--safe-bottom)); }
         #reader-container::-webkit-scrollbar { display: none; }
 
         .book-content { font-size: 1.05rem; line-height: 1.7 !important; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%; overflow-x: hidden; }
@@ -156,25 +211,6 @@
         .book-content blockquote { border-left: 3px solid var(--accent-light); padding-left: 14px; margin: 0.8em 0; color: #555; font-style: italic; }
 
         .chapter-marker { height: 1px; margin: 0; padding: 0; background: transparent; }
-
-        /* Footer fijo */
-        #reader-footer {
-            position: fixed; bottom: 0; left: 0; right: 0; background: var(--reader-bar);
-            border-top: 1px solid var(--reader-border); z-index: 10;
-            display: flex; flex-direction: column; padding-bottom: var(--safe-bottom); margin: 0;
-        }
-        #progress-bar-container { height: var(--progress-height); background: #ddd; flex-shrink: 0; position: relative; }
-        #progress-bar-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s ease; border-radius: 2px; position: absolute; top: 0; left: 0; }
-        #chapter-markers { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
-        .chapter-marker-item { position: absolute; top: 0; width: 1px; height: 100%; background-color: #999; opacity: 0.5; }
-        #footer-collapsible { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; background: var(--reader-bar); }
-        #footer-collapsible.expanded { max-height: var(--buttons-height); }
-        #footer-collapsible.search-active { max-height: calc(var(--buttons-height) + var(--search-row-height)); }
-        #footer-buttons { display: flex; align-items: center; justify-content: space-around; padding: 4px 0; }
-        .footer-btn { background: transparent; border: none; font-size: 1.4rem; color: var(--text); padding: 2px 8px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
-        .footer-btn span { font-size: 0.75rem; }
-        #search-row { display: flex; align-items: center; justify-content: center; padding: 4px 8px; gap: 6px; background: var(--reader-bar); }
-        #search-input { flex: 1; border: 1px solid var(--reader-border); border-radius: 6px; padding: 4px 8px; font-size: 0.85rem; background: #fff; }
 
         /* Panel de resultados de búsqueda (overlay) */
         .search-results-overlay {
@@ -256,25 +292,24 @@
                 <span class="stat-bold" id="ind-pages-left-book">--</span>
             </div>
         </div>
-        <div id="reader-container"></div>
-        <div id="reader-footer">
-            <div id="progress-bar-container">
-                <div id="progress-bar-fill"></div>
-                <div id="chapter-markers"></div>
+        <div id="progress-bar-container">
+            <div id="progress-bar-fill"></div>
+            <div id="chapter-markers"></div>
+        </div>
+        <div id="menu-panel">
+            <div id="menu-buttons">
+                <button class="menu-btn" id="btn-back-library" title="Volver a la biblioteca">← <span>Bib.</span></button>
+                <button class="menu-btn" id="btn-search" title="Buscar">🔍</button>
+                <button class="menu-btn" id="btn-chapters" title="Índice de capítulos">☰ <span>Cap.</span></button>
             </div>
-            <div id="footer-collapsible">
-                <div id="footer-buttons">
-                    <button class="footer-btn" id="btn-back-library" title="Volver a la biblioteca">← <span>Bib.</span></button>
-                    <button class="footer-btn" id="btn-search" title="Buscar">🔍</button>
-                    <button class="footer-btn" id="btn-chapters" title="Índice de capítulos">☰ <span>Cap.</span></button>
-                </div>
-                <div id="search-row">
-                    <input type="text" id="search-input" placeholder="Buscar..." />
-                    <button class="footer-btn" id="btn-search-results" style="font-size:1rem;">🔍</button>
-                    <button class="footer-btn" id="btn-search-close" style="font-size:1rem;">✕</button>
-                </div>
+            <div id="search-row">
+                <input type="text" id="search-input" placeholder="Buscar..." />
+                <button class="menu-btn" id="btn-search-results" style="font-size:1rem;">🔍</button>
+                <button class="menu-btn" id="btn-search-close" style="font-size:1rem;">✕</button>
             </div>
         </div>
+        <div id="reader-container"></div>
+        <!-- overlays -->
         <div id="search-results-overlay" class="search-results-overlay">
             <div class="search-results-modal" id="search-results-modal">
                 <h3>Resultados</h3>
@@ -298,7 +333,7 @@
             const $fileInput = $('#file-input');
             const $uploadFab = $('#upload-btn-fab');
             const $readerContainer = $('#reader-container');
-            const $footerCollapsible = $('#footer-collapsible');
+            const $menuPanel = $('#menu-panel');
             const $headerLeft = $('#header-left');
             const $headerCenter = $('#header-center');
             const $indPagesLeftChapter = $('#ind-pages-left-chapter');
@@ -321,7 +356,7 @@
             const $chaptersList = $('#chapters-list');
 
             // ---------- IndexedDB ----------
-            const DB_NAME = 'epub_reader_v43';
+            const DB_NAME = 'epub_reader_v44';
             const DB_VERSION = 1;
             let db = null;
 
@@ -515,13 +550,8 @@
             // ---------- LECTOR ----------
             let currentBookId = null, currentBookData = null, sectionDOMRefs = [], lastRawData = { globalPage:-1, chapterIdx:-1, chapterPage:-1 };
             let saveTimer = null, isRestoring = false, scrollRAF = null, lastScroll = -1, bookStyleElement = null;
-            let footerButtonsVisible = false, searchRowVisible = false, globalCharMapping = null;
-
-            function updateContainerPadding() {
-                const container = $readerContainer;
-                container.classList.remove('buttons-visible','search-visible');
-                if (footerButtonsVisible) { container.classList.add('buttons-visible'); if (searchRowVisible) container.classList.add('search-visible'); }
-            }
+            let menuVisible = false, searchRowVisible = false;
+            let globalCharMapping = null;
 
             function renderChapterMarkers() {
                 if (!currentBookData?.structure?.sections || !currentBookData.structure.totalPages) return;
@@ -538,9 +568,8 @@
                 $readerContainer.innerHTML = '';
                 sectionDOMRefs = []; lastRawData = { globalPage:-1, chapterIdx:-1, chapterPage:-1 };
                 isRestoring = false; lastScroll = -1; currentBookId = bookId;
-                footerButtonsVisible = false; searchRowVisible = false;
-                $footerCollapsible.classList.remove('expanded','search-active');
-                $readerContainer.classList.remove('buttons-visible','search-visible');
+                menuVisible = false; searchRowVisible = false;
+                $menuPanel.classList.remove('visible', 'search-active');
                 $searchRow.classList.remove('active'); $searchInput.value = '';
 
                 dbGetBook(bookId).then(bookData => {
@@ -628,7 +657,6 @@
                 const percent = Math.round((gPage/totalPages)*100);
                 const pagesLeftBook = Math.max(0, totalPages - gPage);
 
-                // Tiempo de lectura restante (formato X h Y m)
                 const totalWords = s.totalWords || 0;
                 const wordsRemaining = Math.floor(totalWords * (1 - percent/100));
                 const totalMinutes = Math.ceil(wordsRemaining / 285);
@@ -658,30 +686,36 @@
                     if (!currentBookId) return;
                     const top = $readerContainer.scrollTop;
                     await dbSaveProgress(currentBookId, { globalPage:gPage, spineIndex:chIdx, pageInChapter:chPage, scrollTop:top, totalPages: currentBookData?.structure?.totalPages||0 });
-                    try { localStorage.setItem('last_progress_v43_'+currentBookId, JSON.stringify({ gPage, chIdx, chPage, top, ts: Date.now() })); } catch(e) {}
+                    try { localStorage.setItem('last_progress_v44_'+currentBookId, JSON.stringify({ gPage, chIdx, chPage, top, ts: Date.now() })); } catch(e) {}
                 }, 1000);
             }
 
-            function toggleFooter() {
-                footerButtonsVisible = !footerButtonsVisible;
-                if (footerButtonsVisible) $footerCollapsible.classList.add('expanded');
-                else { $footerCollapsible.classList.remove('expanded','search-active'); searchRowVisible = false; $searchRow.classList.remove('active'); }
-                updateContainerPadding();
+            function toggleMenuPanel() {
+                menuVisible = !menuVisible;
+                if (menuVisible) {
+                    $menuPanel.classList.add('visible');
+                } else {
+                    $menuPanel.classList.remove('visible', 'search-active');
+                    searchRowVisible = false;
+                    $searchRow.classList.remove('active');
+                }
             }
 
             function setupScrollDetection() {
                 const container = $readerContainer;
                 const scrollHandler = () => { if (scrollRAF) return; scrollRAF = requestAnimationFrame(() => { scrollRAF = null; const st = container.scrollTop; if (Math.abs(st-lastScroll)>2) { lastScroll = st; if (!isRestoring) updatePositionFromScroll(); } }); };
                 container.addEventListener('scroll', scrollHandler, { passive:true }); container._scrollHandler = scrollHandler;
-                const clickHandler = (e) => { if (e.target.closest('#reader-footer') || e.target.closest('#chapters-overlay') || e.target.closest('#search-results-overlay')) return; toggleFooter(); };
-                container.addEventListener('click', clickHandler); container._clickHandler = clickHandler;
+
+                // El clic en el header muestra/oculta el menú
+                const header = document.getElementById('reader-header');
+                header.addEventListener('click', () => toggleMenuPanel());
+
                 window.addEventListener('resize', () => { clearTimeout(window._resizeTimer); window._resizeTimer = setTimeout(() => { measureSectionPositions(); updatePositionFromScroll(); }, 400); });
             }
 
             function cleanupScrollDetection() {
                 const container = $readerContainer;
                 if (container._scrollHandler) { container.removeEventListener('scroll', container._scrollHandler); container._scrollHandler = null; }
-                if (container._clickHandler) { container.removeEventListener('click', container._clickHandler); container._clickHandler = null; }
                 if (scrollRAF) cancelAnimationFrame(scrollRAF); clearTimeout(saveTimer); clearTimeout(window._resizeTimer);
                 if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; }
             }
@@ -717,9 +751,20 @@
                 document.querySelectorAll('.search-result-item').forEach(item => { item.addEventListener('click', function() { const pos = parseInt(this.dataset.position); const walker = document.createTreeWalker($readerContainer, NodeFilter.SHOW_TEXT, null, false); let currentPos = 0, targetNode = null, offset = 0; while (walker.nextNode()) { const node = walker.currentNode; const len = node.textContent.length; if (currentPos+len > pos) { targetNode = node; offset = pos - currentPos; break; } currentPos += len; } if (targetNode) { const range = document.createRange(); range.setStart(targetNode, Math.min(offset, targetNode.length)); range.collapse(true); const rect = range.getClientRects()[0]; if (rect) { const containerRect = $readerContainer.getBoundingClientRect(); const scrollTop = rect.top - containerRect.top + $readerContainer.scrollTop - 100; $readerContainer.scrollTo({ top: scrollTop, behavior:'smooth' }); } } $searchResultsOverlay.classList.remove('active'); }); });
             }
 
-            $btnSearch.addEventListener('click', () => { if (!searchRowVisible) { searchRowVisible = true; $footerCollapsible.classList.add('search-active'); $searchRow.classList.add('active'); $searchInput.focus(); updateContainerPadding(); } else { searchRowVisible = false; $footerCollapsible.classList.remove('search-active'); $searchRow.classList.remove('active'); updateContainerPadding(); } });
+            $btnSearch.addEventListener('click', () => {
+                if (!searchRowVisible) {
+                    searchRowVisible = true;
+                    $menuPanel.classList.add('search-active');
+                    $searchRow.classList.add('active');
+                    $searchInput.focus();
+                } else {
+                    searchRowVisible = false;
+                    $menuPanel.classList.remove('search-active');
+                    $searchRow.classList.remove('active');
+                }
+            });
             $btnSearchResults.addEventListener('click', () => { const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); });
-            $btnSearchClose.addEventListener('click', () => { searchRowVisible = false; $footerCollapsible.classList.remove('search-active'); $searchRow.classList.remove('active'); $searchInput.value = ''; updateContainerPadding(); });
+            $btnSearchClose.addEventListener('click', () => { searchRowVisible = false; $menuPanel.classList.remove('search-active'); $searchRow.classList.remove('active'); $searchInput.value = ''; });
             $searchInput.addEventListener('keydown', (e) => { if (e.key==='Enter') { const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); } });
             $searchResultsOverlay.addEventListener('click', (e) => { if (e.target === $searchResultsOverlay) $searchResultsOverlay.classList.remove('active'); });
 
@@ -736,7 +781,7 @@
             document.addEventListener('drop', async (e) => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file && file.name.endsWith('.epub')) { const book = await uploadAndProcessBook(file); if (book) renderLibrary(); } });
             window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage>0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage:lastRawData.globalPage, spineIndex:lastRawData.chapterIdx, pageInChapter:lastRawData.chapterPage, scrollTop:$readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages||0 }); } });
 
-            (async () => { await openDB(); await renderLibrary(); console.log('📚 Lector ePub v43 listo (porcentaje igual al tiempo)'); })().catch(err => console.error('Error inicial:', err));
+            (async () => { await openDB(); await renderLibrary(); console.log('📚 Lector ePub v44 listo (menú superior, sin barra inferior)'); })().catch(err => console.error('Error inicial:', err));
         })();
     </script>
 </body>
