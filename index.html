@@ -883,7 +883,7 @@
             const $btnCancelBookmark = $('#btn-cancel-bookmark');
             const $readerHeader = $('#reader-header');
 
-            const DB_NAME = 'epub_reader_v80';
+            const DB_NAME = 'epub_reader_v82';
             const DB_VERSION = 1;
             let db = null;
             let editingBookmarkId = null;
@@ -1047,22 +1047,33 @@
 
                     const bookContent = $readerContainer.querySelector('.book-content');
                     if (bookContent) {
-                        // 1. Eliminar la portada borrosa buscando por la data URL exacta
-                        if (bookData.coverDataUrl) {
-                            const imgs = bookContent.querySelectorAll('img');
-                            for (const img of imgs) {
-                                if (img.src === bookData.coverDataUrl) {
-                                    img.remove();
-                                    break; // solo eliminamos la primera coincidencia
+                        const coverFilename = bookData.coverHref ? bookData.coverHref.split('/').pop() : null;
+                        // Eliminar <img> que coincida con la portada
+                        const imgs = bookContent.querySelectorAll('img');
+                        for (const img of imgs) {
+                            if (coverFilename && img.src.includes(coverFilename)) {
+                                img.remove();
+                            } else if (bookData.coverDataUrl && img.src === bookData.coverDataUrl) {
+                                img.remove();
+                            }
+                        }
+                        // Eliminar <svg> completos que contengan la portada
+                        const svgElements = bookContent.querySelectorAll('svg');
+                        for (const svg of svgElements) {
+                            const images = svg.querySelectorAll('image');
+                            for (const img of images) {
+                                const href = img.getAttribute('href') || img.getAttribute('xlink:href') || '';
+                                if (coverFilename && href.includes(coverFilename)) {
+                                    svg.remove(); // Elimina todo el SVG y su espacio
+                                    break;
+                                } else if (bookData.coverDataUrl && href === bookData.coverDataUrl) {
+                                    svg.remove();
+                                    break;
                                 }
                             }
-                        } else {
-                            // Si no tenemos dataUrl, eliminar la primera imagen como fallback
-                            const firstImg = bookContent.querySelector('img');
-                            if (firstImg) firstImg.remove();
                         }
 
-                        // 2. Insertar portada nítida si existe
+                        // Insertar portada nítida si existe
                         if (bookData.coverBase64) {
                             const existingCover = bookContent.querySelector(`img[src="${bookData.coverBase64}"]`);
                             if (!existingCover) {
@@ -1087,7 +1098,7 @@
             function findCurrentSection(scrollTop) { const container = $readerContainer; const clientHeight = container.clientHeight; const triggerY = clientHeight * 0.33; for (let i = sectionDOMRefs.length - 1; i >= 0; i--) { if (scrollTop >= sectionDOMRefs[i].offsetTop - triggerY) return sectionDOMRefs[i]; } return sectionDOMRefs[0] || null; }
             function updatePositionFromScroll() { if (!currentBookData?.structure?.sections || isRestoring) return; const container = $readerContainer; const st = container.scrollTop; const sh = container.scrollHeight; const ch = container.clientHeight; if (sh <= ch) { updateIndicators(1, 0, 1); return; } const sec = findCurrentSection(st); if (!sec) return; const idx = sec.index; const sections = currentBookData.structure.sections; if (idx >= sections.length) return; const sData = sections[idx]; const start = sec.offsetTop; const height = sec.height || 1; const progress = Math.max(0, Math.min(1, (st - start) / height)); const pageInChapter = Math.min(Math.floor(progress * sData.pageCount) + 1, sData.pageCount || 1); const globalPage = sData.globalStartPage + pageInChapter; updateIndicators(Math.max(1, Math.min(globalPage, currentBookData.structure.totalPages || 1)), idx, Math.max(1, pageInChapter)); const totalPages = currentBookData.structure.totalPages || 1; const percent = Math.round((globalPage / totalPages) * 100); $progressBarFill.style.width = percent + '%'; }
             function updateIndicators(gPage, chIdx, chPage) { const s = currentBookData?.structure; if (!s) return; const sec = s.sections[chIdx]; if (!sec) return; const chTotal = sec.pageCount || 1; const chTitle = sec.title || 'Capítulo ' + (chIdx + 1); const totalPages = s.totalPages || 1; if (gPage === lastRawData.globalPage && chIdx === lastRawData.chapterIdx && chPage === lastRawData.chapterPage) return; lastRawData = { globalPage: gPage, chapterIdx: chIdx, chapterPage: chPage }; const pagesLeftChapter = Math.max(1, chTotal - chPage + 1); const percent = Math.round((gPage / totalPages) * 100); const pagesLeftBook = Math.max(0, totalPages - gPage); const totalWords = s.totalWords || 0; const wordsRemaining = Math.floor(totalWords * (1 - percent / 100)); const totalMinutes = Math.ceil(wordsRemaining / 285); let timeText = '--'; if (totalMinutes > 0) { if (totalMinutes >= 60) { const hours = Math.floor(totalMinutes / 60); const mins = totalMinutes % 60; timeText = `${hours} h ${mins} m`; } else { timeText = `${totalMinutes} m`; } } $indPagesLeftChapter.textContent = pagesLeftChapter; $infoPercent.textContent = percent + '%'; $infoPagesLeft.textContent = pagesLeftBook; $headerChapterTitle.textContent = chTitle; $infoCenter.textContent = timeText; scheduleProgressSave(gPage, chIdx, chPage); }
-            function scheduleProgressSave(gPage, chIdx, chPage) { clearTimeout(saveTimer); saveTimer = setTimeout(async () => { if (!currentBookId) return; const top = $readerContainer.scrollTop; await dbSaveProgress(currentBookId, { globalPage: gPage, spineIndex: chIdx, pageInChapter: chPage, scrollTop: top, totalPages: currentBookData?.structure?.totalPages || 0 }); try { localStorage.setItem('last_progress_v80_' + currentBookId, JSON.stringify({ gPage, chIdx, chPage, top, ts: Date.now() })); } catch (e) {} }, 1000); }
+            function scheduleProgressSave(gPage, chIdx, chPage) { clearTimeout(saveTimer); saveTimer = setTimeout(async () => { if (!currentBookId) return; const top = $readerContainer.scrollTop; await dbSaveProgress(currentBookId, { globalPage: gPage, spineIndex: chIdx, pageInChapter: chPage, scrollTop: top, totalPages: currentBookData?.structure?.totalPages || 0 }); try { localStorage.setItem('last_progress_v82_' + currentBookId, JSON.stringify({ gPage, chIdx, chPage, top, ts: Date.now() })); } catch (e) {} }, 1000); }
             function toggleOptionsPanel() { optionsVisible = !optionsVisible; if (optionsVisible) { $optionsPanel.classList.add('visible'); } else { $optionsPanel.classList.remove('visible'); } }
             function setupScrollDetection() { const container = $readerContainer; const scrollHandler = () => { if (scrollRAF) return; scrollRAF = requestAnimationFrame(() => { scrollRAF = null; const st = container.scrollTop; if (Math.abs(st - lastScroll) > 2) { lastScroll = st; if (!isRestoring) updatePositionFromScroll(); } }); }; container.addEventListener('scroll', scrollHandler, { passive: true }); container._scrollHandler = scrollHandler; if (headerClickHandler) { $readerHeader.removeEventListener('click', headerClickHandler); } headerClickHandler = (e) => { e.stopPropagation(); toggleOptionsPanel(); }; $readerHeader.addEventListener('click', headerClickHandler); window.addEventListener('resize', () => { clearTimeout(window._resizeTimer); window._resizeTimer = setTimeout(() => { measureSectionPositions(); updatePositionFromScroll(); }, 400); }); }
             function cleanupScrollDetection() { const container = $readerContainer; if (container._scrollHandler) { container.removeEventListener('scroll', container._scrollHandler); container._scrollHandler = null; } if (headerClickHandler) { $readerHeader.removeEventListener('click', headerClickHandler); headerClickHandler = null; } if (scrollRAF) cancelAnimationFrame(scrollRAF); clearTimeout(saveTimer); clearTimeout(window._resizeTimer); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; } }
@@ -1123,7 +1134,7 @@
             document.addEventListener('drop', async (e) => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file && file.name.endsWith('.epub')) { const book = await uploadAndProcessBook(file); if (book) renderLibrary(); } });
             window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage > 0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } });
 
-            (async () => { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader listo'); })().catch(err => console.error('Error inicial:', err));
+            (async () => { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader v82 listo'); })().catch(err => console.error('Error inicial:', err));
         })();
     </script>
 </body>
