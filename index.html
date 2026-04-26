@@ -103,15 +103,14 @@
         .book-content, .book-content * { font-weight: normal !important; }
         .book-content h1, .book-content h2, .book-content h3, .book-content h4 { font-weight: 700 !important; text-align: center; margin: 2.5em 0 1.5em 0; }
         .book-content p { margin-bottom: 0.7em !important; font-size: 1.15rem !important; line-height: inherit !important; text-indent: 35px !important; text-align: justify !important; }
-        /* Imágenes: fondo gris y mezcla para eliminar el blanco */
         .book-content img {
             max-width: 100% !important;
             height: auto !important;
             border-radius: 6px;
             margin: 1.5em auto;
             display: block;
-            background-color: var(--reader-bg);   /* fondo del lector para transparencias */
-            mix-blend-mode: multiply;             /* convierte el blanco en el color de fondo */
+            background-color: var(--reader-bg);
+            mix-blend-mode: multiply;
         }
         .book-content blockquote { border-left: 3px solid var(--accent-light); padding-left: 14px; margin: 1.5em 0; color: #555; font-style: italic; }
         .book-content hr { display: none; }
@@ -215,7 +214,6 @@
     updateDeviceTime(); setInterval(updateDeviceTime, 60000);
     function hideOptionsPanel() { optionsVisible = false; $optionsPanel.classList.remove('visible'); }
 
-    // Función de pantalla completa (sin promesa, para el uso simple)
     function requestFullscreen() {
         if (!document.fullscreenElement && !document.webkitFullscreenElement) {
             const el = document.documentElement;
@@ -269,12 +267,7 @@
             if (!src) return null;
             if (imageCache.has(src)) return imageCache.get(src);
             let cleanSrc = decodeURIComponent(src);
-            const candidates = [
-                cleanSrc,
-                opfDir + cleanSrc,
-                cleanSrc.replace(/^\.\//, ''),
-                cleanSrc.split('/').pop()
-            ];
+            const candidates = [ cleanSrc, opfDir + cleanSrc, cleanSrc.replace(/^\.\//, ''), cleanSrc.split('/').pop() ];
             let imgFile = null;
             for (const c of candidates) {
                 imgFile = zip.file(c);
@@ -282,10 +275,7 @@
                 if (!imgFile) {
                     const bareName = c.split('/').pop();
                     for (const fname of Object.keys(zip.files)) {
-                        if (fname.endsWith('/'+bareName) || fname===bareName) {
-                            imgFile = zip.file(fname);
-                            break;
-                        }
+                        if (fname.endsWith('/'+bareName) || fname===bareName) { imgFile = zip.file(fname); break; }
                     }
                 }
             }
@@ -368,7 +358,7 @@
             hideProcessing();
             const books = await dbGetAllBooks();
             const duplicado = books.find(b => b.title === structure.title && b.author === structure.author);
-            if (duplicado) { if (!confirm(`El libro "${structure.title}" de ${structure.author} ya está en la biblioteca. ¿Deseas añadirlo de todos modos?`)) return null; }
+            if (duplicado) return null; // no añadir duplicados, sin diálogo
             showProcessing('Guardando…');
             const bookData = { id: generateId(), title: structure.title, author: structure.author, coverBase64: structure.coverBase64, coverHref: structure.coverHref, coverDataUrl: structure.coverDataUrl, epubData: arrayBuffer, structure, dateAdded: Date.now() };
             try { await dbAddBook(bookData); } catch (err) { hideProcessing(); alert('Error al guardar: '+err.message); return null; }
@@ -386,7 +376,7 @@
         isRenderingLibrary = true;
         try {
             const books = await dbGetAllBooks(); $bookList.innerHTML = '';
-            for (const book of books) { const progress = await dbGetProgress(book.id); const totalPages = book.structure?.totalPages || 0; const currentPage = progress?.globalPage || 0; const percent = totalPages ? Math.round((currentPage/totalPages)*100) : 0; let coverHTML = ''; if (book.coverBase64) coverHTML = `<img src="${book.coverBase64}" alt="portada" style="width:100%;height:100%;object-fit:contain;">`; const card = document.createElement('div'); card.className = 'book-card'; card.dataset.bookId = book.id; card.innerHTML = `<div class="cover">${coverHTML}</div><div class="info"><div class="title">${escapeHtml(book.title)}</div><div class="author">${escapeHtml(book.author)}</div><div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${percent}%"></div></div><div class="progress-text">${totalPages ? `Pág. ${currentPage} de ${totalPages} (${percent}%)` : 'Sin procesar'}</div></div><button class="delete-btn" data-action="delete" aria-label="Eliminar">×</button>`; card.addEventListener('click', e => { if (!e.target.closest('[data-action="delete"]')) openBookForReading(book.id); }); card.querySelector('.delete-btn').addEventListener('click', async e => { e.stopPropagation(); if (confirm(`¿Eliminar "${book.title}"?`)) { await dbDeleteBook(book.id); renderLibrary(); } }); $bookList.appendChild(card); }
+            for (const book of books) { const progress = await dbGetProgress(book.id); const totalPages = book.structure?.totalPages || 0; const currentPage = progress?.globalPage || 0; const percent = totalPages ? Math.round((currentPage/totalPages)*100) : 0; let coverHTML = ''; if (book.coverBase64) coverHTML = `<img src="${book.coverBase64}" alt="portada" style="width:100%;height:100%;object-fit:contain;">`; const card = document.createElement('div'); card.className = 'book-card'; card.dataset.bookId = book.id; card.innerHTML = `<div class="cover">${coverHTML}</div><div class="info"><div class="title">${escapeHtml(book.title)}</div><div class="author">${escapeHtml(book.author)}</div><div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${percent}%"></div></div><div class="progress-text">${totalPages ? `Pág. ${currentPage} de ${totalPages} (${percent}%)` : 'Sin procesar'}</div></div><button class="delete-btn" data-action="delete" aria-label="Eliminar">×</button>`; card.addEventListener('click', e => { if (!e.target.closest('[data-action="delete"]')) openBookForReading(book.id); }); card.querySelector('.delete-btn').addEventListener('click', async e => { e.stopPropagation(); await dbDeleteBook(book.id); renderLibrary(); }); $bookList.appendChild(card); }
         } finally {
             isRenderingLibrary = false;
         }
@@ -399,6 +389,23 @@
     let optionsVisible = false, globalCharMapping = null, headerClickHandler = null;
 
     function renderChapterMarkers() { if (!currentBookData?.structure?.sections || !currentBookData.structure.totalPages) return; const totalPages = currentBookData.structure.totalPages, sections = currentBookData.structure.sections; $chapterMarkers.innerHTML = ''; sections.forEach(sec => { if (sec.globalStartPage === 0) return; const leftPercent = (sec.globalStartPage / totalPages) * 100; const marker = document.createElement('div'); marker.className = 'chapter-marker-item'; marker.style.left = leftPercent + '%'; $chapterMarkers.appendChild(marker); }); }
+
+    // Devuelve el texto del último encabezado visible antes de la posición de scroll
+    function getCurrentHeadingText(scrollTop) {
+        const container = $readerContainer;
+        if (!container) return null;
+        const headings = container.querySelectorAll('.book-content h1, .book-content h2, .book-content h3, .book-content h4');
+        let current = null;
+        const containerRect = container.getBoundingClientRect();
+        headings.forEach(h => {
+            const rect = h.getBoundingClientRect();
+            const top = rect.top - containerRect.top + container.scrollTop;
+            if (top <= scrollTop + 10) { // pequeño margen
+                current = h.textContent.trim();
+            }
+        });
+        return current;
+    }
 
     function openBookForReading(bookId) {
         if (saveTimer) clearTimeout(saveTimer); if (scrollRAF) cancelAnimationFrame(scrollRAF); cleanupScrollDetection(); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; }
@@ -424,7 +431,7 @@
 
             $readerContainer.addEventListener('click', e => { const link = e.target.closest('a[data-chapter-link]'); if (!link) return; e.preventDefault(); const targetIndex = parseInt(link.getAttribute('data-chapter-link'),10); const markers = $readerContainer.querySelectorAll('.chapter-marker'); if (markers[targetIndex]) { const top = markers[targetIndex].getBoundingClientRect().top - $readerContainer.getBoundingClientRect().top + $readerContainer.scrollTop; $readerContainer.scrollTo({ top, behavior:'smooth' }); } });
             history.pushState({ screen:'reader', bookId }, '', '#reader-'+bookId);
-            setTimeout(() => { measureSectionPositions(); dbGetProgress(bookId).then(progress => { if (progress && progress.globalPage > 0) { isRestoring = true; restoreScrollPosition(progress); } else updatePositionFromScroll(); }); setupScrollDetection(); requestFullscreen(); /* Solo pantalla completa al leer */ }, 300);
+            setTimeout(() => { measureSectionPositions(); dbGetProgress(bookId).then(progress => { if (progress && progress.globalPage > 0) { isRestoring = true; restoreScrollPosition(progress); } else updatePositionFromScroll(); }); setupScrollDetection(); requestFullscreen(); }, 300);
         }).catch(err => { console.error('Error al abrir libro:', err); alert('Error al cargar el libro.'); });
     }
 
@@ -432,7 +439,38 @@
     function measureSectionPositions() { if (!currentBookData?.structure?.sections) return; sectionDOMRefs = []; const markers = $readerContainer.querySelectorAll('.chapter-marker'); markers.forEach(marker => { const idx = parseInt(marker.dataset.chapterIndex,10); const rect = marker.getBoundingClientRect(); const containerRect = $readerContainer.getBoundingClientRect(); const top = rect.top - containerRect.top + $readerContainer.scrollTop; let nextMarker = marker.nextElementSibling; while (nextMarker && !nextMarker.classList.contains('chapter-marker')) nextMarker = nextMarker.nextElementSibling; let height; if (nextMarker) { const nextRect = nextMarker.getBoundingClientRect(); height = (nextRect.top - containerRect.top + $readerContainer.scrollTop) - top; } else height = $readerContainer.scrollHeight - top; sectionDOMRefs.push({ index: idx, offsetTop: top, height: Math.max(height,100) }); }); if (sectionDOMRefs.length === 0 && currentBookData.structure.sections.length > 0) sectionDOMRefs.push({ index:0, offsetTop:0, height: $readerContainer.scrollHeight }); }
     function findCurrentSection(scrollTop) { const container = $readerContainer; const clientHeight = container.clientHeight; const triggerY = clientHeight * 0.33; for (let i = sectionDOMRefs.length-1; i>=0; i--) { if (scrollTop >= sectionDOMRefs[i].offsetTop - triggerY) return sectionDOMRefs[i]; } return sectionDOMRefs[0] || null; }
     function updatePositionFromScroll() { if (!currentBookData?.structure?.sections || isRestoring) return; const container = $readerContainer; const st = container.scrollTop; const sh = container.scrollHeight; const ch = container.clientHeight; if (sh <= ch) { updateIndicators(1,0,1); return; } const sec = findCurrentSection(st); if (!sec) return; const idx = sec.index; const sections = currentBookData.structure.sections; if (idx >= sections.length) return; const sData = sections[idx]; const start = sec.offsetTop; const height = sec.height || 1; const progress = Math.max(0, Math.min(1, (st-start)/height)); const pageInChapter = Math.min(Math.floor(progress*sData.pageCount)+1, sData.pageCount||1); const globalPage = sData.globalStartPage + pageInChapter; updateIndicators(Math.max(1, Math.min(globalPage, currentBookData.structure.totalPages||1)), idx, Math.max(1, pageInChapter)); const totalPages = currentBookData.structure.totalPages||1; const percent = Math.round((globalPage/totalPages)*100); $progressBarFill.style.width = percent+'%'; }
-    function updateIndicators(gPage, chIdx, chPage) { const s = currentBookData?.structure; if (!s) return; const sec = s.sections[chIdx]; if (!sec) return; const chTotal = sec.pageCount||1; const chTitle = sec.title || ''; const totalPages = s.totalPages||1; if (gPage === lastRawData.globalPage && chIdx === lastRawData.chapterIdx && chPage === lastRawData.chapterPage) return; lastRawData = { globalPage: gPage, chapterIdx: chIdx, chapterPage: chPage }; const pagesLeftChapter = Math.max(1, chTotal - chPage + 1); const percent = Math.round((gPage/totalPages)*100); const pagesLeftBook = Math.max(0, totalPages - gPage); const totalWords = s.totalWords||0; const wordsRemaining = Math.floor(totalWords * (1 - percent/100)); const totalMinutes = Math.ceil(wordsRemaining/285); let timeText = '--'; if (totalMinutes > 0) { if (totalMinutes >= 60) { const hours = Math.floor(totalMinutes/60); const mins = totalMinutes%60; timeText = `${hours} h ${mins} m`; } else { timeText = `${totalMinutes} m`; } } $indPagesLeftChapter.textContent = pagesLeftChapter; $infoPercent.textContent = percent+'%'; $infoPagesLeft.textContent = pagesLeftBook; $headerChapterTitle.textContent = chTitle || '--'; $infoCenter.textContent = timeText; scheduleProgressSave(gPage, chIdx, chPage); }
+    function updateIndicators(gPage, chIdx, chPage) {
+        const s = currentBookData?.structure;
+        if (!s) return;
+        const sec = s.sections[chIdx];
+        if (!sec) return;
+        const chTotal = sec.pageCount||1;
+        const totalPages = s.totalPages||1;
+        if (gPage === lastRawData.globalPage && chIdx === lastRawData.chapterIdx && chPage === lastRawData.chapterPage) return;
+        lastRawData = { globalPage: gPage, chapterIdx: chIdx, chapterPage: chPage };
+        const pagesLeftChapter = Math.max(1, chTotal - chPage + 1);
+        const percent = Math.round((gPage/totalPages)*100);
+        const pagesLeftBook = Math.max(0, totalPages - gPage);
+        const totalWords = s.totalWords||0;
+        const wordsRemaining = Math.floor(totalWords * (1 - percent/100));
+        const totalMinutes = Math.ceil(wordsRemaining/285);
+        let timeText = '--';
+        if (totalMinutes > 0) {
+            if (totalMinutes >= 60) { const hours = Math.floor(totalMinutes/60); const mins = totalMinutes%60; timeText = `${hours} h ${mins} m`; }
+            else { timeText = `${totalMinutes} m`; }
+        }
+        $indPagesLeftChapter.textContent = pagesLeftChapter;
+        $infoPercent.textContent = percent+'%';
+        $infoPagesLeft.textContent = pagesLeftBook;
+
+        // Priorizar el encabezado detectado en el contenido visible
+        const st = $readerContainer.scrollTop;
+        const headingText = getCurrentHeadingText(st);
+        $headerChapterTitle.textContent = headingText || sec.title || '--';
+
+        $infoCenter.textContent = timeText;
+        scheduleProgressSave(gPage, chIdx, chPage);
+    }
     function scheduleProgressSave(gPage, chIdx, chPage) { clearTimeout(saveTimer); saveTimer = setTimeout(async () => { if (!currentBookId) return; const top = $readerContainer.scrollTop; await dbSaveProgress(currentBookId, { globalPage: gPage, spineIndex: chIdx, pageInChapter: chPage, scrollTop: top, totalPages: currentBookData?.structure?.totalPages||0 }); try { localStorage.setItem('last_progress_v91_'+currentBookId, JSON.stringify({ gPage, chIdx, chPage, top, ts: Date.now() })); } catch(e) {} }, 1000); }
     function toggleOptionsPanel() { optionsVisible = !optionsVisible; $optionsPanel.classList.toggle('visible', optionsVisible); }
     function setupScrollDetection() { const container = $readerContainer; const scrollHandler = () => { if (scrollRAF) return; scrollRAF = requestAnimationFrame(() => { scrollRAF = null; const st = container.scrollTop; if (Math.abs(st-lastScroll) > 2) { lastScroll = st; if (!isRestoring) updatePositionFromScroll(); } }); }; container.addEventListener('scroll', scrollHandler, { passive: true }); container._scrollHandler = scrollHandler; if (headerClickHandler) $readerHeader.removeEventListener('click', headerClickHandler); headerClickHandler = (e) => { e.stopPropagation(); toggleOptionsPanel(); }; $readerHeader.addEventListener('click', headerClickHandler); window.addEventListener('resize', () => { clearTimeout(window._resizeTimer); window._resizeTimer = setTimeout(() => { measureSectionPositions(); updatePositionFromScroll(); }, 400); }); }
@@ -509,18 +547,14 @@
 
     $btnBackLibrary.addEventListener('click', () => { if (saveTimer) { clearTimeout(saveTimer); if (lastRawData.globalPage > 0 && currentBookId) dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } closeReader(); });
 
-    $uploadFab.addEventListener('click', () => {
-        setTimeout(() => $fileInput.click(), 0);
-    });
+    $uploadFab.addEventListener('click', () => { setTimeout(() => $fileInput.click(), 0); });
     $fileInput.addEventListener('change', async e => {
         const file = e.target.files[0];
         if (!file) return;
         if (!file.name.toLowerCase().endsWith('.epub')) { alert('Solo archivos .epub'); $fileInput.value = ''; return; }
         const book = await uploadAndProcessBook(file);
         $fileInput.value = '';
-        if (book) {
-            openBookForReading(book.id);
-        }
+        if (book) renderLibrary();   // solo agregar a biblioteca, no abrir
     });
     document.addEventListener('dragover', e => e.preventDefault());
     document.addEventListener('drop', async e => {
@@ -528,7 +562,7 @@
         const file = e.dataTransfer.files[0];
         if (file && file.name.endsWith('.epub')) {
             const book = await uploadAndProcessBook(file);
-            if (book) openBookForReading(book.id);
+            if (book) renderLibrary();   // solo agregar a biblioteca, no abrir
         }
     });
     window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage > 0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } });
