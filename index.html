@@ -17,7 +17,6 @@
             --accent: #777777;
             --accent-light: #cccccc;
             --radius: 14px;
-            --safe-bottom: env(safe-area-inset-bottom, 0px);
             --progress-height: 4px;
             --options-height: 46px;
             --search-row-height: 40px;
@@ -48,7 +47,26 @@
         .book-card .info .progress-bar-fill { height: 100%; background: #777; border-radius: 4px; transition: width .4s; }
         .book-card .info .progress-text { font-size: 0.7rem; color: var(--text-secondary); margin-top: 3px; }
         .book-card .delete-btn { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%; border: none; background: transparent; color: #cbb; font-size: 1.2rem; cursor: pointer; z-index: 2; }
-        #upload-btn-fab { position: fixed; bottom: calc(24px + var(--safe-bottom)); right: 20px; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 1.8rem; cursor: pointer; box-shadow: 0 4px 16px rgba(119,119,119,0.35); z-index: 5; display: flex; align-items: center; justify-content: center; }
+        #upload-btn-fab {
+            position: fixed;
+            bottom: 24px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            font-size: 1.8rem;
+            cursor: pointer;
+            box-shadow: 0 4px 16px rgba(119,119,119,0.35);
+            z-index: 5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.1s;
+        }
+        #upload-btn-fab:active { transform: scale(0.9); }
         #upload-btn-fab:disabled { opacity: 0.5; pointer-events: none; }
         #file-input { display: none; }
         #reader-header { flex-shrink: 0; background: var(--reader-bar); border-bottom: 1px solid var(--reader-border); z-index: 4; cursor: pointer; user-select: none; display: flex; flex-direction: column; padding: 6px 0 0 0; gap: 3px; }
@@ -79,13 +97,22 @@
         .clear-input-btn.visible { display: block; }
         #btn-search-results { font-size: 1.5rem; background: transparent; border: none; color: var(--text); cursor: pointer; padding: 2px 4px; display: flex; align-items: center; }
         .temp-highlight { background-color: #cccccc; border-radius: 2px; transition: background-color 0.4s ease; }
-        #reader-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; padding: 16px 18px; padding-bottom: calc(8px + var(--safe-bottom)); font-family: 'Georgia', 'Palatino Linotype', serif; color: #1f1f1f; width: 100%; margin: 0 auto; word-wrap: break-word; overflow-x: hidden; background: var(--reader-bg); scrollbar-width: none; -ms-overflow-style: none; }
+        #reader-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; padding: 16px 18px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font-family: 'Georgia', 'Palatino Linotype', serif; color: #1f1f1f; width: 100%; margin: 0 auto; word-wrap: break-word; overflow-x: hidden; background: var(--reader-bg); scrollbar-width: none; -ms-overflow-style: none; }
         #reader-container::-webkit-scrollbar { display: none; }
         .book-content { font-size: 1.05rem; line-height: 1.7 !important; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%; overflow-x: hidden; font-weight: normal; }
         .book-content, .book-content * { font-weight: normal !important; }
         .book-content h1, .book-content h2, .book-content h3, .book-content h4 { font-weight: 700 !important; text-align: center; margin: 2.5em 0 1.5em 0; }
         .book-content p { margin-bottom: 0.7em !important; font-size: 1.15rem !important; line-height: inherit !important; text-indent: 35px !important; text-align: justify !important; }
-        .book-content img { max-width: 100% !important; height: auto !important; border-radius: 6px; margin: 1.5em auto; display: block; }
+        /* Imágenes: fondo gris y mezcla para eliminar el blanco */
+        .book-content img {
+            max-width: 100% !important;
+            height: auto !important;
+            border-radius: 6px;
+            margin: 1.5em auto;
+            display: block;
+            background-color: var(--reader-bg);   /* fondo del lector para transparencias */
+            mix-blend-mode: multiply;             /* convierte el blanco en el color de fondo */
+        }
         .book-content blockquote { border-left: 3px solid var(--accent-light); padding-left: 14px; margin: 1.5em 0; color: #555; font-style: italic; }
         .book-content hr { display: none; }
         .book-content .chapter-marker { height: 1px; margin: 0; padding: 0; background: transparent; }
@@ -164,8 +191,8 @@
 
     const DB_NAME = 'epub_reader_v91';
     let db, editingBookmarkId = null;
-    let isRenderingLibrary = false;   // ← Bloqueo para evitar renderizados concurrentes
-    let isClosingReader = false;      // ← Evita cierres múltiples del lector
+    let isRenderingLibrary = false;
+    let isClosingReader = false;
 
     function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
     function dbAddBook(d) { return new Promise((res, rej) => { const tx = db.transaction('books','readwrite'); tx.objectStore('books').put(d); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
@@ -187,9 +214,16 @@
     function updateDeviceTime() { const now = new Date(); $deviceTime.textContent = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`; }
     updateDeviceTime(); setInterval(updateDeviceTime, 60000);
     function hideOptionsPanel() { optionsVisible = false; $optionsPanel.classList.remove('visible'); }
-    function requestFullscreen() { if (!document.fullscreenElement && !document.webkitFullscreenElement) { const el = document.documentElement; const req = el.requestFullscreen || el.webkitRequestFullscreen; if (req) req.call(el).then(() => hideOptionsPanel()).catch(()=>{}); } }
+
+    // Función de pantalla completa (sin promesa, para el uso simple)
+    function requestFullscreen() {
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            const el = document.documentElement;
+            const req = el.requestFullscreen || el.webkitRequestFullscreen;
+            if (req) req.call(el).then(() => hideOptionsPanel()).catch(() => {});
+        }
+    }
     function exitFullscreen() { if (document.fullscreenElement || document.webkitFullscreenElement) { const exit = document.exitFullscreen || document.webkitExitFullscreen; if (exit) exit.call(document).then(() => hideOptionsPanel()).catch(()=>{}); } }
-    function toggleFullscreen() { if (!document.fullscreenElement && !document.webkitFullscreenElement) requestFullscreen(); else exitFullscreen(); }
     document.addEventListener('fullscreenchange', () => hideOptionsPanel());
     document.addEventListener('webkitfullscreenchange', () => hideOptionsPanel());
 
@@ -326,7 +360,6 @@
     }
 
     async function uploadAndProcessBook(file) {
-        // Deshabilitar botón durante el procesamiento
         $uploadFab.disabled = true;
         try {
             showProcessing('Leyendo archivo…'); const arrayBuffer = await file.arrayBuffer();
@@ -341,7 +374,7 @@
             try { await dbAddBook(bookData); } catch (err) { hideProcessing(); alert('Error al guardar: '+err.message); return null; }
             hideProcessing(); return bookData;
         } finally {
-            $uploadFab.disabled = false;  // Reactivar siempre
+            $uploadFab.disabled = false;
         }
     }
 
@@ -349,7 +382,6 @@
     function hideProcessing() { $processingOverlay.classList.remove('active'); }
 
     async function renderLibrary() {
-        // Evitar ejecuciones solapadas
         if (isRenderingLibrary) return;
         isRenderingLibrary = true;
         try {
@@ -384,17 +416,15 @@
 
             const bookContent = $readerContainer.querySelector('.book-content');
             if (bookContent) {
-                // Reemplazar <hr> por separadores de espacio
                 const hrs = bookContent.querySelectorAll('hr');
                 hrs.forEach(hr => { const separator = document.createElement('div'); separator.className = 'chapter-separator'; hr.parentNode.replaceChild(separator, hr); });
-                // Insertar separadores entre capítulos
                 const markers = bookContent.querySelectorAll('.chapter-marker');
                 markers.forEach((marker, index) => { if (index > 0) { const separator = document.createElement('div'); separator.className = 'chapter-separator'; marker.parentNode.insertBefore(separator, marker); } });
             }
 
             $readerContainer.addEventListener('click', e => { const link = e.target.closest('a[data-chapter-link]'); if (!link) return; e.preventDefault(); const targetIndex = parseInt(link.getAttribute('data-chapter-link'),10); const markers = $readerContainer.querySelectorAll('.chapter-marker'); if (markers[targetIndex]) { const top = markers[targetIndex].getBoundingClientRect().top - $readerContainer.getBoundingClientRect().top + $readerContainer.scrollTop; $readerContainer.scrollTo({ top, behavior:'smooth' }); } });
             history.pushState({ screen:'reader', bookId }, '', '#reader-'+bookId);
-            setTimeout(() => { measureSectionPositions(); dbGetProgress(bookId).then(progress => { if (progress && progress.globalPage > 0) { isRestoring = true; restoreScrollPosition(progress); } else updatePositionFromScroll(); }); setupScrollDetection(); requestFullscreen(); }, 300);
+            setTimeout(() => { measureSectionPositions(); dbGetProgress(bookId).then(progress => { if (progress && progress.globalPage > 0) { isRestoring = true; restoreScrollPosition(progress); } else updatePositionFromScroll(); }); setupScrollDetection(); requestFullscreen(); /* Solo pantalla completa al leer */ }, 300);
         }).catch(err => { console.error('Error al abrir libro:', err); alert('Error al cargar el libro.'); });
     }
 
@@ -409,12 +439,12 @@
     function cleanupScrollDetection() { const container = $readerContainer; if (container._scrollHandler) { container.removeEventListener('scroll', container._scrollHandler); container._scrollHandler = null; } if (headerClickHandler) { $readerHeader.removeEventListener('click', headerClickHandler); headerClickHandler = null; } if (scrollRAF) cancelAnimationFrame(scrollRAF); clearTimeout(saveTimer); clearTimeout(window._resizeTimer); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; } }
     async function restoreScrollPosition(progress) { await new Promise(r => setTimeout(r, 400)); measureSectionPositions(); const container = $readerContainer; const sh = container.scrollHeight; const ch = container.clientHeight; if (typeof progress.scrollTop === 'number' && progress.scrollTop > 0 && progress.scrollTop < sh) container.scrollTop = progress.scrollTop; else container.scrollTop = Math.max(0, (progress.globalPage/(progress.totalPages||1))*(sh-ch)); setTimeout(() => { if (container.scrollTop < 5 && progress.scrollTop > 100) container.scrollTop = progress.scrollTop; isRestoring = false; measureSectionPositions(); updatePositionFromScroll(); }, 400); }
     function closeReader() {
-        if (isClosingReader) return;   // Evitar cierres múltiples
+        if (isClosingReader) return;
         isClosingReader = true;
         cleanupScrollDetection(); $readerContainer.innerHTML = ''; sectionDOMRefs = []; currentBookId = null; currentBookData = null; globalCharMapping = null; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; $readerScreen.classList.add('hidden'); $libraryScreen.classList.remove('hidden');
         if (history.state && history.state.screen === 'reader') history.back();
         exitFullscreen(); renderLibrary();
-        setTimeout(() => { isClosingReader = false; }, 300); // Pequeño retardo para evitar reactivación instantánea
+        setTimeout(() => { isClosingReader = false; }, 300);
     }
     window.addEventListener('popstate', e => { if (e.state && e.state.screen === 'reader') closeReader(); });
 
@@ -479,10 +509,28 @@
 
     $btnBackLibrary.addEventListener('click', () => { if (saveTimer) { clearTimeout(saveTimer); if (lastRawData.globalPage > 0 && currentBookId) dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } closeReader(); });
 
-    $uploadFab.addEventListener('click', () => $fileInput.click());
-    $fileInput.addEventListener('change', async e => { const file = e.target.files[0]; if (!file) return; if (!file.name.toLowerCase().endsWith('.epub')) { alert('Solo archivos .epub'); $fileInput.value = ''; return; } const book = await uploadAndProcessBook(file); $fileInput.value = ''; if (book) renderLibrary(); });
+    $uploadFab.addEventListener('click', () => {
+        setTimeout(() => $fileInput.click(), 0);
+    });
+    $fileInput.addEventListener('change', async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (!file.name.toLowerCase().endsWith('.epub')) { alert('Solo archivos .epub'); $fileInput.value = ''; return; }
+        const book = await uploadAndProcessBook(file);
+        $fileInput.value = '';
+        if (book) {
+            openBookForReading(book.id);
+        }
+    });
     document.addEventListener('dragover', e => e.preventDefault());
-    document.addEventListener('drop', async e => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file && file.name.endsWith('.epub')) { const book = await uploadAndProcessBook(file); if (book) renderLibrary(); } });
+    document.addEventListener('drop', async e => {
+        e.preventDefault();
+        const file = e.dataTransfer.files[0];
+        if (file && file.name.endsWith('.epub')) {
+            const book = await uploadAndProcessBook(file);
+            if (book) openBookForReading(book.id);
+        }
+    });
     window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage > 0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } });
 
     (async () => { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader v91 listo'); })().catch(err => console.error('Error inicial:', err));
