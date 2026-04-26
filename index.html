@@ -230,6 +230,20 @@
     $clearNoteBtn.addEventListener('click', () => { $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkNote.focus(); });
     $bookmarkNote.addEventListener('input', () => { $clearNoteBtn.classList.toggle('visible', $bookmarkNote.value.length > 0); autoResizeTextarea(); });
 
+    // Elimina todos los enlaces (<a>) conservando el texto
+    function removeAllLinks(html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const links = doc.querySelectorAll('a');
+        links.forEach(link => {
+            const parent = link.parentNode;
+            while (link.firstChild) {
+                parent.insertBefore(link.firstChild, link);
+            }
+            parent.removeChild(link);
+        });
+        return doc.body.innerHTML;
+    }
+
     async function processEpub(arrayBuffer) {
         const zip = await JSZip.loadAsync(arrayBuffer);
         const containerFile = zip.file('META-INF/container.xml');
@@ -290,8 +304,6 @@
             return null;
         }
 
-        function fixInternalLinks(html) { return html.replace(/<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi, (match, href) => { if (href.startsWith('http') || href.startsWith('#')) return match; const cleanHref = href.split('#')[0].trim(); const bare = cleanHref.split('/').pop(); let targetIndex = hrefToIndex.get(cleanHref); if (targetIndex === undefined) targetIndex = hrefToIndex.get(bare); if (targetIndex !== undefined) return match.replace(/href\s*=\s*["'][^"']+["']/i, 'href="#').replace('<a ', `<a data-chapter-link="${targetIndex}" `); return match.replace(/href\s*=\s*["'][^"']+["']/i, 'href="#"'); }); }
-
         const sections = [];
         let globalPage = 0, totalWords = 0;
         for (let i = 0; i < spineItems.length; i++) {
@@ -325,7 +337,9 @@
                 return dataUrl ? `<${tag} ${before}href="${dataUrl}" ${after}>` : m;
             });
 
-            html = fixInternalLinks(html);
+            // Eliminar todos los vínculos del contenido
+            html = removeAllLinks(html);
+
             const text = stripHtml(html);
             const charCount = text.length;
             const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
@@ -358,7 +372,7 @@
             hideProcessing();
             const books = await dbGetAllBooks();
             const duplicado = books.find(b => b.title === structure.title && b.author === structure.author);
-            if (duplicado) return null; // no añadir duplicados, sin diálogo
+            if (duplicado) return null;
             showProcessing('Guardando…');
             const bookData = { id: generateId(), title: structure.title, author: structure.author, coverBase64: structure.coverBase64, coverHref: structure.coverHref, coverDataUrl: structure.coverDataUrl, epubData: arrayBuffer, structure, dateAdded: Date.now() };
             try { await dbAddBook(bookData); } catch (err) { hideProcessing(); alert('Error al guardar: '+err.message); return null; }
@@ -390,7 +404,6 @@
 
     function renderChapterMarkers() { if (!currentBookData?.structure?.sections || !currentBookData.structure.totalPages) return; const totalPages = currentBookData.structure.totalPages, sections = currentBookData.structure.sections; $chapterMarkers.innerHTML = ''; sections.forEach(sec => { if (sec.globalStartPage === 0) return; const leftPercent = (sec.globalStartPage / totalPages) * 100; const marker = document.createElement('div'); marker.className = 'chapter-marker-item'; marker.style.left = leftPercent + '%'; $chapterMarkers.appendChild(marker); }); }
 
-    // Devuelve el texto del último encabezado visible antes de la posición de scroll
     function getCurrentHeadingText(scrollTop) {
         const container = $readerContainer;
         if (!container) return null;
@@ -400,7 +413,7 @@
         headings.forEach(h => {
             const rect = h.getBoundingClientRect();
             const top = rect.top - containerRect.top + container.scrollTop;
-            if (top <= scrollTop + 10) { // pequeño margen
+            if (top <= scrollTop + 10) {
                 current = h.textContent.trim();
             }
         });
@@ -429,7 +442,18 @@
                 markers.forEach((marker, index) => { if (index > 0) { const separator = document.createElement('div'); separator.className = 'chapter-separator'; marker.parentNode.insertBefore(separator, marker); } });
             }
 
-            $readerContainer.addEventListener('click', e => { const link = e.target.closest('a[data-chapter-link]'); if (!link) return; e.preventDefault(); const targetIndex = parseInt(link.getAttribute('data-chapter-link'),10); const markers = $readerContainer.querySelectorAll('.chapter-marker'); if (markers[targetIndex]) { const top = markers[targetIndex].getBoundingClientRect().top - $readerContainer.getBoundingClientRect().top + $readerContainer.scrollTop; $readerContainer.scrollTo({ top, behavior:'smooth' }); } });
+            // Ya no hay enlaces en el contenido, pero mantenemos el listener por si acaso
+            $readerContainer.addEventListener('click', e => {
+                const link = e.target.closest('a[data-chapter-link]');
+                if (!link) return;
+                e.preventDefault();
+                const targetIndex = parseInt(link.getAttribute('data-chapter-link'),10);
+                const markers = $readerContainer.querySelectorAll('.chapter-marker');
+                if (markers[targetIndex]) {
+                    const top = markers[targetIndex].getBoundingClientRect().top - $readerContainer.getBoundingClientRect().top + $readerContainer.scrollTop;
+                    $readerContainer.scrollTo({ top, behavior:'smooth' });
+                }
+            });
             history.pushState({ screen:'reader', bookId }, '', '#reader-'+bookId);
             setTimeout(() => { measureSectionPositions(); dbGetProgress(bookId).then(progress => { if (progress && progress.globalPage > 0) { isRestoring = true; restoreScrollPosition(progress); } else updatePositionFromScroll(); }); setupScrollDetection(); requestFullscreen(); }, 300);
         }).catch(err => { console.error('Error al abrir libro:', err); alert('Error al cargar el libro.'); });
@@ -463,7 +487,6 @@
         $infoPercent.textContent = percent+'%';
         $infoPagesLeft.textContent = pagesLeftBook;
 
-        // Priorizar el encabezado detectado en el contenido visible
         const st = $readerContainer.scrollTop;
         const headingText = getCurrentHeadingText(st);
         $headerChapterTitle.textContent = headingText || sec.title || '--';
@@ -554,7 +577,7 @@
         if (!file.name.toLowerCase().endsWith('.epub')) { alert('Solo archivos .epub'); $fileInput.value = ''; return; }
         const book = await uploadAndProcessBook(file);
         $fileInput.value = '';
-        if (book) renderLibrary();   // solo agregar a biblioteca, no abrir
+        if (book) renderLibrary();
     });
     document.addEventListener('dragover', e => e.preventDefault());
     document.addEventListener('drop', async e => {
@@ -562,7 +585,7 @@
         const file = e.dataTransfer.files[0];
         if (file && file.name.endsWith('.epub')) {
             const book = await uploadAndProcessBook(file);
-            if (book) renderLibrary();   // solo agregar a biblioteca, no abrir
+            if (book) renderLibrary();
         }
     });
     window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage > 0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } });
