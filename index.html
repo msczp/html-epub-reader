@@ -49,6 +49,7 @@
         .book-card .info .progress-text { font-size: 0.7rem; color: var(--text-secondary); margin-top: 3px; }
         .book-card .delete-btn { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%; border: none; background: transparent; color: #cbb; font-size: 1.2rem; cursor: pointer; z-index: 2; }
         #upload-btn-fab { position: fixed; bottom: calc(24px + var(--safe-bottom)); right: 20px; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 1.8rem; cursor: pointer; box-shadow: 0 4px 16px rgba(119,119,119,0.35); z-index: 5; display: flex; align-items: center; justify-content: center; }
+        #upload-btn-fab:disabled { opacity: 0.5; pointer-events: none; }
         #file-input { display: none; }
         #reader-header { flex-shrink: 0; background: var(--reader-bar); border-bottom: 1px solid var(--reader-border); z-index: 4; cursor: pointer; user-select: none; display: flex; flex-direction: column; padding: 6px 0 0 0; gap: 3px; }
         .header-row { display: flex; align-items: center; justify-content: space-between; padding-left: 12px; padding-right: 12px; font-size: var(--header-font-size); line-height: var(--header-line-height); color: var(--text-secondary); font-weight: 400; margin: 0; min-height: auto; }
@@ -163,6 +164,8 @@
 
     const DB_NAME = 'epub_reader_v91';
     let db, editingBookmarkId = null;
+    let isRenderingLibrary = false;   // ← Bloqueo para evitar renderizados concurrentes
+    let isClosingReader = false;      // ← Evita cierres múltiples del lector
 
     function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
     function dbAddBook(d) { return new Promise((res, rej) => { const tx = db.transaction('books','readwrite'); tx.objectStore('books').put(d); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
@@ -323,25 +326,38 @@
     }
 
     async function uploadAndProcessBook(file) {
-        showProcessing('Leyendo archivo…'); const arrayBuffer = await file.arrayBuffer();
-        showProcessing('Analizando estructura e imágenes…'); let structure;
-        try { structure = await processEpub(arrayBuffer); } catch (err) { hideProcessing(); alert('Error al procesar: '+err.message); console.error(err); return null; }
-        hideProcessing();
-        const books = await dbGetAllBooks();
-        const duplicado = books.find(b => b.title === structure.title && b.author === structure.author);
-        if (duplicado) { if (!confirm(`El libro "${structure.title}" de ${structure.author} ya está en la biblioteca. ¿Deseas añadirlo de todos modos?`)) return null; }
-        showProcessing('Guardando…');
-        const bookData = { id: generateId(), title: structure.title, author: structure.author, coverBase64: structure.coverBase64, coverHref: structure.coverHref, coverDataUrl: structure.coverDataUrl, epubData: arrayBuffer, structure, dateAdded: Date.now() };
-        try { await dbAddBook(bookData); } catch (err) { hideProcessing(); alert('Error al guardar: '+err.message); return null; }
-        hideProcessing(); return bookData;
+        // Deshabilitar botón durante el procesamiento
+        $uploadFab.disabled = true;
+        try {
+            showProcessing('Leyendo archivo…'); const arrayBuffer = await file.arrayBuffer();
+            showProcessing('Analizando estructura e imágenes…'); let structure;
+            try { structure = await processEpub(arrayBuffer); } catch (err) { hideProcessing(); alert('Error al procesar: '+err.message); console.error(err); return null; }
+            hideProcessing();
+            const books = await dbGetAllBooks();
+            const duplicado = books.find(b => b.title === structure.title && b.author === structure.author);
+            if (duplicado) { if (!confirm(`El libro "${structure.title}" de ${structure.author} ya está en la biblioteca. ¿Deseas añadirlo de todos modos?`)) return null; }
+            showProcessing('Guardando…');
+            const bookData = { id: generateId(), title: structure.title, author: structure.author, coverBase64: structure.coverBase64, coverHref: structure.coverHref, coverDataUrl: structure.coverDataUrl, epubData: arrayBuffer, structure, dateAdded: Date.now() };
+            try { await dbAddBook(bookData); } catch (err) { hideProcessing(); alert('Error al guardar: '+err.message); return null; }
+            hideProcessing(); return bookData;
+        } finally {
+            $uploadFab.disabled = false;  // Reactivar siempre
+        }
     }
 
     function showProcessing(msg) { $procMsg.textContent = msg; $processingOverlay.classList.add('active'); }
     function hideProcessing() { $processingOverlay.classList.remove('active'); }
 
     async function renderLibrary() {
-        const books = await dbGetAllBooks(); $bookList.innerHTML = '';
-        for (const book of books) { const progress = await dbGetProgress(book.id); const totalPages = book.structure?.totalPages || 0; const currentPage = progress?.globalPage || 0; const percent = totalPages ? Math.round((currentPage/totalPages)*100) : 0; let coverHTML = ''; if (book.coverBase64) coverHTML = `<img src="${book.coverBase64}" alt="portada" style="width:100%;height:100%;object-fit:contain;">`; const card = document.createElement('div'); card.className = 'book-card'; card.dataset.bookId = book.id; card.innerHTML = `<div class="cover">${coverHTML}</div><div class="info"><div class="title">${escapeHtml(book.title)}</div><div class="author">${escapeHtml(book.author)}</div><div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${percent}%"></div></div><div class="progress-text">${totalPages ? `Pág. ${currentPage} de ${totalPages} (${percent}%)` : 'Sin procesar'}</div></div><button class="delete-btn" data-action="delete" aria-label="Eliminar">×</button>`; card.addEventListener('click', e => { if (!e.target.closest('[data-action="delete"]')) openBookForReading(book.id); }); card.querySelector('.delete-btn').addEventListener('click', async e => { e.stopPropagation(); if (confirm(`¿Eliminar "${book.title}"?`)) { await dbDeleteBook(book.id); renderLibrary(); } }); $bookList.appendChild(card); }
+        // Evitar ejecuciones solapadas
+        if (isRenderingLibrary) return;
+        isRenderingLibrary = true;
+        try {
+            const books = await dbGetAllBooks(); $bookList.innerHTML = '';
+            for (const book of books) { const progress = await dbGetProgress(book.id); const totalPages = book.structure?.totalPages || 0; const currentPage = progress?.globalPage || 0; const percent = totalPages ? Math.round((currentPage/totalPages)*100) : 0; let coverHTML = ''; if (book.coverBase64) coverHTML = `<img src="${book.coverBase64}" alt="portada" style="width:100%;height:100%;object-fit:contain;">`; const card = document.createElement('div'); card.className = 'book-card'; card.dataset.bookId = book.id; card.innerHTML = `<div class="cover">${coverHTML}</div><div class="info"><div class="title">${escapeHtml(book.title)}</div><div class="author">${escapeHtml(book.author)}</div><div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${percent}%"></div></div><div class="progress-text">${totalPages ? `Pág. ${currentPage} de ${totalPages} (${percent}%)` : 'Sin procesar'}</div></div><button class="delete-btn" data-action="delete" aria-label="Eliminar">×</button>`; card.addEventListener('click', e => { if (!e.target.closest('[data-action="delete"]')) openBookForReading(book.id); }); card.querySelector('.delete-btn').addEventListener('click', async e => { e.stopPropagation(); if (confirm(`¿Eliminar "${book.title}"?`)) { await dbDeleteBook(book.id); renderLibrary(); } }); $bookList.appendChild(card); }
+        } finally {
+            isRenderingLibrary = false;
+        }
     }
 
     function escapeHtml(str) { const div = document.createElement('div'); div.textContent = str; return div.innerHTML; }
@@ -392,7 +408,14 @@
     function setupScrollDetection() { const container = $readerContainer; const scrollHandler = () => { if (scrollRAF) return; scrollRAF = requestAnimationFrame(() => { scrollRAF = null; const st = container.scrollTop; if (Math.abs(st-lastScroll) > 2) { lastScroll = st; if (!isRestoring) updatePositionFromScroll(); } }); }; container.addEventListener('scroll', scrollHandler, { passive: true }); container._scrollHandler = scrollHandler; if (headerClickHandler) $readerHeader.removeEventListener('click', headerClickHandler); headerClickHandler = (e) => { e.stopPropagation(); toggleOptionsPanel(); }; $readerHeader.addEventListener('click', headerClickHandler); window.addEventListener('resize', () => { clearTimeout(window._resizeTimer); window._resizeTimer = setTimeout(() => { measureSectionPositions(); updatePositionFromScroll(); }, 400); }); }
     function cleanupScrollDetection() { const container = $readerContainer; if (container._scrollHandler) { container.removeEventListener('scroll', container._scrollHandler); container._scrollHandler = null; } if (headerClickHandler) { $readerHeader.removeEventListener('click', headerClickHandler); headerClickHandler = null; } if (scrollRAF) cancelAnimationFrame(scrollRAF); clearTimeout(saveTimer); clearTimeout(window._resizeTimer); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; } }
     async function restoreScrollPosition(progress) { await new Promise(r => setTimeout(r, 400)); measureSectionPositions(); const container = $readerContainer; const sh = container.scrollHeight; const ch = container.clientHeight; if (typeof progress.scrollTop === 'number' && progress.scrollTop > 0 && progress.scrollTop < sh) container.scrollTop = progress.scrollTop; else container.scrollTop = Math.max(0, (progress.globalPage/(progress.totalPages||1))*(sh-ch)); setTimeout(() => { if (container.scrollTop < 5 && progress.scrollTop > 100) container.scrollTop = progress.scrollTop; isRestoring = false; measureSectionPositions(); updatePositionFromScroll(); }, 400); }
-    function closeReader() { cleanupScrollDetection(); $readerContainer.innerHTML = ''; sectionDOMRefs = []; currentBookId = null; currentBookData = null; globalCharMapping = null; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; $readerScreen.classList.add('hidden'); $libraryScreen.classList.remove('hidden'); if (history.state && history.state.screen === 'reader') history.back(); exitFullscreen(); renderLibrary(); }
+    function closeReader() {
+        if (isClosingReader) return;   // Evitar cierres múltiples
+        isClosingReader = true;
+        cleanupScrollDetection(); $readerContainer.innerHTML = ''; sectionDOMRefs = []; currentBookId = null; currentBookData = null; globalCharMapping = null; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; $readerScreen.classList.add('hidden'); $libraryScreen.classList.remove('hidden');
+        if (history.state && history.state.screen === 'reader') history.back();
+        exitFullscreen(); renderLibrary();
+        setTimeout(() => { isClosingReader = false; }, 300); // Pequeño retardo para evitar reactivación instantánea
+    }
     window.addEventListener('popstate', e => { if (e.state && e.state.screen === 'reader') closeReader(); });
 
     function escapeRegExp(string) { return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
