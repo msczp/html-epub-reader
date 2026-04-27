@@ -87,7 +87,6 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            /* padding horizontal eliminado */
             font-size: var(--header-font-size);
             line-height: var(--header-line-height);
             color: inherit;
@@ -101,7 +100,7 @@
             align-items: center;
             justify-content: center;
             min-width: 0;
-            padding: 0 12px;   /* el padding ahora está dentro de cada columna */
+            padding: 0 12px;
             text-align: center;
         }
         .header-col.left { justify-content: center; }
@@ -331,6 +330,7 @@
     $clearNoteBtn.addEventListener('click', () => { $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkNote.focus(); });
     $bookmarkNote.addEventListener('input', () => { $clearNoteBtn.classList.toggle('visible', $bookmarkNote.value.length > 0); autoResizeTextarea(); });
 
+    // Elimina todos los enlaces (<a>) y también cualquier atributo href residual
     function removeAllLinks(html) {
         const doc = new DOMParser().parseFromString(html, 'text/html');
         const links = doc.querySelectorAll('a');
@@ -340,6 +340,12 @@
                 parent.insertBefore(link.firstChild, link);
             }
             parent.removeChild(link);
+        });
+        // También eliminar cualquier elemento con onclick o href que haya quedado
+        const all = doc.body.querySelectorAll('*');
+        all.forEach(el => {
+            if (el.hasAttribute('href')) el.removeAttribute('href');
+            if (el.hasAttribute('onclick')) el.removeAttribute('onclick');
         });
         return doc.body.innerHTML;
     }
@@ -437,6 +443,7 @@
                 return dataUrl ? `<${tag} ${before}href="${dataUrl}" ${after}>` : m;
             });
 
+            // Eliminar todos los vínculos definitivamente
             html = removeAllLinks(html);
 
             const text = stripHtml(html);
@@ -541,6 +548,7 @@
                 markers.forEach((marker, index) => { if (index > 0) { const separator = document.createElement('div'); separator.className = 'chapter-separator'; marker.parentNode.insertBefore(separator, marker); } });
             }
 
+            // Ya no hay enlaces en el contenido, mantenemos el listener por si acaso
             $readerContainer.addEventListener('click', e => {
                 const link = e.target.closest('a[data-chapter-link]');
                 if (!link) return;
@@ -615,44 +623,64 @@
     $searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') { const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); } });
     $searchResultsOverlay.addEventListener('click', e => { if (e.target === $searchResultsOverlay) $searchResultsOverlay.classList.remove('active'); });
 
+    // ---------- CAPÍTULOS CORREGIDO (usa índice directo) ----------
     $btnChapters.addEventListener('click', () => {
         if (!currentBookData?.structure?.sections) return;
         const sections = currentBookData.structure.sections;
         const totalPages = currentBookData.structure.totalPages || 1;
         $chaptersList.innerHTML = '';
+
+        // Construir lista de capítulos con el índice de la primera sección
         const chapters = [];
-        let currentTitle = null, chapterStartPage = 0;
-        for (const sec of sections) {
+        let currentTitle = null, chapterStartPage = 0, startIndex = 0;
+        for (let i = 0; i < sections.length; i++) {
+            const sec = sections[i];
             if (sec.title && sec.title !== currentTitle) {
-                if (currentTitle !== null) chapters.push({ title: currentTitle, startPage: chapterStartPage });
-                currentTitle = sec.title; chapterStartPage = sec.globalStartPage;
+                if (currentTitle !== null) {
+                    chapters.push({ title: currentTitle, startPage: chapterStartPage, startIndex });
+                }
+                currentTitle = sec.title;
+                chapterStartPage = sec.globalStartPage;
+                startIndex = i;
             }
         }
-        if (currentTitle !== null) chapters.push({ title: currentTitle, startPage: chapterStartPage });
+        if (currentTitle !== null) {
+            chapters.push({ title: currentTitle, startPage: chapterStartPage, startIndex });
+        }
+
+        // Si no hay capítulos o el primero empieza después de la portada, añadir "Portada"
         if (chapters.length === 0 || chapters[0].startPage > 0) {
-            const portadaDiv = document.createElement('div'); portadaDiv.className = 'chapter-item';
+            const portadaDiv = document.createElement('div');
+            portadaDiv.className = 'chapter-item';
             portadaDiv.innerHTML = `<span class="chapter-title">Portada</span><span class="chapter-page"><span>${totalPages}</span><span style="margin-left:12px;">0%</span></span>`;
-            portadaDiv.addEventListener('click', () => { $readerContainer.scrollTo({ top: 0, behavior:'smooth' }); $chaptersOverlay.classList.remove('active'); hideOptionsPanel(); });
+            portadaDiv.addEventListener('click', () => {
+                $readerContainer.scrollTo({ top: 0, behavior:'smooth' });
+                $chaptersOverlay.classList.remove('active');
+                hideOptionsPanel();
+            });
             $chaptersList.appendChild(portadaDiv);
         }
+
+        // Crear items para cada capítulo
         chapters.forEach(ch => {
-            const div = document.createElement('div'); div.className = 'chapter-item';
+            const div = document.createElement('div');
+            div.className = 'chapter-item';
             const pagesLeft = Math.max(0, totalPages - ch.startPage);
             const percent = Math.round((ch.startPage / totalPages) * 100);
             div.innerHTML = `<span class="chapter-title">${escapeHtml(ch.title)}</span><span class="chapter-page"><span>${pagesLeft}</span><span style="margin-left:12px;">${percent}%</span></span>`;
             div.addEventListener('click', () => {
-                const firstSec = sections.find(s => s.title === ch.title);
-                if (firstSec) {
-                    const markers = $readerContainer.querySelectorAll('.chapter-marker');
-                    if (markers[firstSec.index]) {
-                        const top = markers[firstSec.index].getBoundingClientRect().top - $readerContainer.getBoundingClientRect().top + $readerContainer.scrollTop;
-                        $readerContainer.scrollTo({ top, behavior:'smooth' });
-                    }
+                // Usar directamente el índice de inicio almacenado
+                const markers = $readerContainer.querySelectorAll('.chapter-marker');
+                if (markers[ch.startIndex]) {
+                    const top = markers[ch.startIndex].getBoundingClientRect().top - $readerContainer.getBoundingClientRect().top + $readerContainer.scrollTop;
+                    $readerContainer.scrollTo({ top, behavior:'smooth' });
                 }
-                $chaptersOverlay.classList.remove('active'); hideOptionsPanel();
+                $chaptersOverlay.classList.remove('active');
+                hideOptionsPanel();
             });
             $chaptersList.appendChild(div);
         });
+
         $chaptersOverlay.classList.add('active');
     });
     $chaptersOverlay.addEventListener('click', e => { if (e.target === $chaptersOverlay) $chaptersOverlay.classList.remove('active'); });
