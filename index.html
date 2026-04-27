@@ -689,7 +689,7 @@
                     const markerRect = markers[ch.startIndex].getBoundingClientRect();
                     const containerRect = $readerContainer.getBoundingClientRect();
                     const top = markerRect.top - containerRect.top + $readerContainer.scrollTop;
-                    const targetScroll = top - $readerContainer.clientHeight * 0.34;
+                    const targetScroll = top - $readerContainer.clientHeight * 0.33;
                     $readerContainer.scrollTo({ top: Math.max(0, targetScroll), behavior:'smooth' });
                 }
                 $chaptersOverlay.classList.remove('active');
