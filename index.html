@@ -20,8 +20,8 @@
             --progress-height: 4px;
             --options-height: 46px;
             --search-row-height: 40px;
-            --header-font-size: 0.85rem;   /* aumentado */
-            --header-line-height: 1.2;      /* ajustado para compacidad */
+            --header-font-size: 0.85rem;
+            --header-line-height: 1.2;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { height: 100%; width: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--reader-bar); color: var(--text); -webkit-tap-highlight-color: transparent; -webkit-font-smoothing: antialiased; }
@@ -70,26 +70,24 @@
         #upload-btn-fab:disabled { opacity: 0.5; pointer-events: none; }
         #file-input { display: none; }
 
-        /* ----- BARRA DEL LECTOR UNIFICADA ----- */
+        /* ----- BARRA DEL LECTOR (centrado exacto en mitades) ----- */
         #reader-header {
             flex-shrink: 0;
             background: var(--reader-bar);
-            /* sin borde inferior */
             z-index: 4;
             cursor: pointer;
             user-select: none;
             display: flex;
             flex-direction: column;
-            padding: 6px 0;            /* espacio vertical simétrico */
-            gap: 4px;                  /* separación uniforme entre filas */
-            color: var(--text);        /* mismo color para todos los textos */
+            padding: 6px 0 0 0;
+            gap: 4px;
+            color: var(--text);
         }
         .header-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding-left: 12px;
-            padding-right: 12px;
+            /* padding horizontal eliminado */
             font-size: var(--header-font-size);
             line-height: var(--header-line-height);
             color: inherit;
@@ -97,9 +95,17 @@
             margin: 0;
             min-height: auto;
         }
-        .header-col { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; }
-        .header-col.left { justify-content: center; text-align: center; }
-        .header-col.right { justify-content: center; text-align: center; }
+        .header-col {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 0;
+            padding: 0 12px;   /* el padding ahora está dentro de cada columna */
+            text-align: center;
+        }
+        .header-col.left { justify-content: center; }
+        .header-col.right { justify-content: center; }
         .stat-group { display: flex; align-items: center; justify-content: center; gap: 2px; white-space: nowrap; }
         .stat-side { text-align: center; font-weight: 400; min-width: 2ch; }
         .stat-center { text-align: center; font-weight: 400; min-width: 4ch; }
@@ -114,7 +120,7 @@
             position: relative;
             cursor: pointer;
             flex-shrink: 0;
-            margin: 4px 0 0 0;        /* solo margen superior */
+            margin: 4px 0 0 0;
         }
         #progress-bar-fill {
             height: 100%;
@@ -129,7 +135,6 @@
         #chapter-markers { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
         .chapter-marker-item { position: absolute; top: 0; width: 2px; height: 100%; background-color: #999; opacity: 0.8; }
 
-        /* Panel de opciones (búsqueda y botones) */
         #options-panel {
             max-height: 0;
             overflow: hidden;
@@ -141,7 +146,7 @@
         }
         #options-panel.visible {
             max-height: calc(var(--options-height) + var(--search-row-height));
-            padding: 4px 0;           /* espacio vertical uniforme */
+            padding: 4px 0;
         }
         #options-buttons {
             display: flex;
