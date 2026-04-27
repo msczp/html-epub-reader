@@ -20,8 +20,8 @@
             --progress-height: 4px;
             --options-height: 46px;
             --search-row-height: 40px;
-            --header-font-size: 0.75rem;
-            --header-line-height: 1.3;
+            --header-font-size: 0.85rem;   /* aumentado */
+            --header-line-height: 1.2;      /* ajustado para compacidad */
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { height: 100%; width: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--reader-bar); color: var(--text); -webkit-tap-highlight-color: transparent; -webkit-font-smoothing: antialiased; }
@@ -69,33 +69,129 @@
         #upload-btn-fab:active { transform: scale(0.9); }
         #upload-btn-fab:disabled { opacity: 0.5; pointer-events: none; }
         #file-input { display: none; }
-        #reader-header { flex-shrink: 0; background: var(--reader-bar); border-bottom: 1px solid var(--reader-border); z-index: 4; cursor: pointer; user-select: none; display: flex; flex-direction: column; padding: 6px 0 0 0; gap: 3px; }
-        .header-row { display: flex; align-items: center; justify-content: space-between; padding-left: 12px; padding-right: 12px; font-size: var(--header-font-size); line-height: var(--header-line-height); color: var(--text-secondary); font-weight: 400; margin: 0; min-height: auto; }
+
+        /* ----- BARRA DEL LECTOR UNIFICADA ----- */
+        #reader-header {
+            flex-shrink: 0;
+            background: var(--reader-bar);
+            /* sin borde inferior */
+            z-index: 4;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            flex-direction: column;
+            padding: 6px 0;            /* espacio vertical simétrico */
+            gap: 4px;                  /* separación uniforme entre filas */
+            color: var(--text);        /* mismo color para todos los textos */
+        }
+        .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-left: 12px;
+            padding-right: 12px;
+            font-size: var(--header-font-size);
+            line-height: var(--header-line-height);
+            color: inherit;
+            font-weight: 400;
+            margin: 0;
+            min-height: auto;
+        }
         .header-col { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; }
         .header-col.left { justify-content: center; text-align: center; }
         .header-col.right { justify-content: center; text-align: center; }
         .stat-group { display: flex; align-items: center; justify-content: center; gap: 2px; white-space: nowrap; }
         .stat-side { text-align: center; font-weight: 400; min-width: 2ch; }
         .stat-center { text-align: center; font-weight: 400; min-width: 4ch; }
-        .time-stat { font-weight: 400; color: var(--text-secondary); white-space: nowrap; }
-        .bold-stat { font-weight: 700; color: #1a1a1a; }
-        #header-chapter-title { font-weight: 700; color: var(--text-secondary); }
+        .time-stat { font-weight: 400; color: inherit; }
+        .bold-stat { font-weight: 700; color: inherit; }
+        #header-chapter-title { font-weight: 700; color: inherit; }
         .chapter-title-header { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; display: block; }
-        #progress-bar-container { height: var(--progress-height); background: #ddd; position: relative; cursor: pointer; flex-shrink: 0; margin: 3px 0 0 0; }
-        #progress-bar-fill { height: 100%; background: #777; width: 0%; transition: width 0.3s ease; border-radius: 2px; position: absolute; top: 0; left: 0; }
+
+        #progress-bar-container {
+            height: var(--progress-height);
+            background: #ddd;
+            position: relative;
+            cursor: pointer;
+            flex-shrink: 0;
+            margin: 4px 0 0 0;        /* solo margen superior */
+        }
+        #progress-bar-fill {
+            height: 100%;
+            background: #777;
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 2px;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
         #chapter-markers { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
         .chapter-marker-item { position: absolute; top: 0; width: 2px; height: 100%; background-color: #999; opacity: 0.8; }
-        #options-panel { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; background: var(--reader-bar); border-bottom: none; flex-shrink: 0; }
-        #options-panel.visible { max-height: calc(var(--options-height) + var(--search-row-height) + 8px); border-bottom: 1px solid var(--reader-border); }
-        #options-buttons { display: flex; align-items: center; justify-content: stretch; padding: 4px 0; }
-        .opt-btn { flex: 1; background: transparent; border: none; font-size: 1.5rem; color: var(--text); padding: 2px 0; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; line-height: 1; min-width: 0; text-align: center; }
-        #search-row { display: flex; align-items: center; justify-content: center; padding: 4px 8px; gap: 6px; background: var(--reader-bar); position: relative; }
+
+        /* Panel de opciones (búsqueda y botones) */
+        #options-panel {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            background: var(--reader-bar);
+            flex-shrink: 0;
+            padding: 0;
+            color: var(--text);
+        }
+        #options-panel.visible {
+            max-height: calc(var(--options-height) + var(--search-row-height));
+            padding: 4px 0;           /* espacio vertical uniforme */
+        }
+        #options-buttons {
+            display: flex;
+            align-items: center;
+            justify-content: stretch;
+            padding: 4px 0;
+            color: inherit;
+        }
+        .opt-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            font-size: 1.6rem;
+            color: inherit;
+            padding: 2px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            line-height: 1;
+            min-width: 0;
+            text-align: center;
+        }
+        #search-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 8px;
+            gap: 6px;
+            background: var(--reader-bar);
+            position: relative;
+            color: inherit;
+        }
         .input-wrapper { position: relative; flex: 1; }
-        #search-input { width: 100%; border: 1px solid var(--reader-border); border-radius: 6px; padding: 4px 28px 4px 8px; font-size: 0.85rem; background: #fff; }
+        #search-input { width: 100%; border: 1px solid var(--reader-border); border-radius: 6px; padding: 4px 28px 4px 8px; font-size: 0.85rem; background: #fff; color: var(--text); }
         #search-input:focus, .bookmark-form textarea:focus, .note-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
         .clear-input-btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #999; font-size: 1.2rem; cursor: pointer; padding: 2px 4px; line-height: 1; display: none; }
         .clear-input-btn.visible { display: block; }
-        #btn-search-results { font-size: 1.5rem; background: transparent; border: none; color: var(--text); cursor: pointer; padding: 2px 4px; display: flex; align-items: center; }
+        #btn-search-results {
+            font-size: 1.6rem;
+            background: transparent;
+            border: none;
+            color: inherit;
+            cursor: pointer;
+            padding: 2px 4px;
+            display: flex;
+            align-items: center;
+        }
+
         .temp-highlight { background-color: #cccccc; border-radius: 2px; transition: background-color 0.4s ease; }
         #reader-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; padding: 16px 18px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font-family: 'Georgia', 'Palatino Linotype', serif; color: #1f1f1f; width: 100%; margin: 0 auto; word-wrap: break-word; overflow-x: hidden; background: var(--reader-bg); scrollbar-width: none; -ms-overflow-style: none; }
         #reader-container::-webkit-scrollbar { display: none; }
@@ -230,7 +326,6 @@
     $clearNoteBtn.addEventListener('click', () => { $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkNote.focus(); });
     $bookmarkNote.addEventListener('input', () => { $clearNoteBtn.classList.toggle('visible', $bookmarkNote.value.length > 0); autoResizeTextarea(); });
 
-    // Elimina todos los enlaces (<a>) conservando el texto
     function removeAllLinks(html) {
         const doc = new DOMParser().parseFromString(html, 'text/html');
         const links = doc.querySelectorAll('a');
@@ -337,7 +432,6 @@
                 return dataUrl ? `<${tag} ${before}href="${dataUrl}" ${after}>` : m;
             });
 
-            // Eliminar todos los vínculos del contenido
             html = removeAllLinks(html);
 
             const text = stripHtml(html);
@@ -442,7 +536,6 @@
                 markers.forEach((marker, index) => { if (index > 0) { const separator = document.createElement('div'); separator.className = 'chapter-separator'; marker.parentNode.insertBefore(separator, marker); } });
             }
 
-            // Ya no hay enlaces en el contenido, pero mantenemos el listener por si acaso
             $readerContainer.addEventListener('click', e => {
                 const link = e.target.closest('a[data-chapter-link]');
                 if (!link) return;
