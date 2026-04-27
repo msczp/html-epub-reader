@@ -228,6 +228,12 @@
         .search-result-item .meta { font-size: 0.7rem; color: var(--text-secondary); align-self: flex-end; }
         .chapter-item .chapter-title { text-align: left; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.85rem; }
         .chapter-item .chapter-page { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; flex-shrink: 0; text-align: right; display: flex; gap: 12px; align-items: baseline; }
+
+        /* Solo negrita para el capítulo actual, sin fondo */
+        .chapter-item.current-chapter {
+            font-weight: bold;
+        }
+
         .add-bookmark-btn { display: block; width: 100%; padding: 8px; margin-bottom: 8px; background: #888; color: #fff; border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer; text-align: center; }
         .bookmark-form { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
         .note-wrapper { position: relative; }
@@ -330,7 +336,6 @@
     $clearNoteBtn.addEventListener('click', () => { $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkNote.focus(); });
     $bookmarkNote.addEventListener('input', () => { $clearNoteBtn.classList.toggle('visible', $bookmarkNote.value.length > 0); autoResizeTextarea(); });
 
-    // Elimina todos los enlaces (<a>) y también cualquier atributo href residual
     function removeAllLinks(html) {
         const doc = new DOMParser().parseFromString(html, 'text/html');
         const links = doc.querySelectorAll('a');
@@ -341,7 +346,6 @@
             }
             parent.removeChild(link);
         });
-        // También eliminar cualquier elemento con onclick o href que haya quedado
         const all = doc.body.querySelectorAll('*');
         all.forEach(el => {
             if (el.hasAttribute('href')) el.removeAttribute('href');
@@ -443,7 +447,6 @@
                 return dataUrl ? `<${tag} ${before}href="${dataUrl}" ${after}>` : m;
             });
 
-            // Eliminar todos los vínculos definitivamente
             html = removeAllLinks(html);
 
             const text = stripHtml(html);
@@ -548,7 +551,6 @@
                 markers.forEach((marker, index) => { if (index > 0) { const separator = document.createElement('div'); separator.className = 'chapter-separator'; marker.parentNode.insertBefore(separator, marker); } });
             }
 
-            // Ya no hay enlaces en el contenido, mantenemos el listener por si acaso
             $readerContainer.addEventListener('click', e => {
                 const link = e.target.closest('a[data-chapter-link]');
                 if (!link) return;
@@ -623,21 +625,26 @@
     $searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') { const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); } });
     $searchResultsOverlay.addEventListener('click', e => { if (e.target === $searchResultsOverlay) $searchResultsOverlay.classList.remove('active'); });
 
-    // ---------- CAPÍTULOS CORREGIDO (usa índice directo) ----------
+    // ---------- CAPÍTULOS con resaltado exacto (solo negrita) ----------
     $btnChapters.addEventListener('click', () => {
         if (!currentBookData?.structure?.sections) return;
         const sections = currentBookData.structure.sections;
         const totalPages = currentBookData.structure.totalPages || 1;
         $chaptersList.innerHTML = '';
 
-        // Construir lista de capítulos con el índice de la primera sección
+        // Determinar el índice de sección actual
+        const st = $readerContainer.scrollTop;
+        const currentSec = findCurrentSection(st);
+        const currentIndex = currentSec ? currentSec.index : 0;
+
+        // Construir capítulos con rango de secciones
         const chapters = [];
         let currentTitle = null, chapterStartPage = 0, startIndex = 0;
         for (let i = 0; i < sections.length; i++) {
             const sec = sections[i];
             if (sec.title && sec.title !== currentTitle) {
                 if (currentTitle !== null) {
-                    chapters.push({ title: currentTitle, startPage: chapterStartPage, startIndex });
+                    chapters.push({ title: currentTitle, startPage: chapterStartPage, startIndex, endIndex: i - 1 });
                 }
                 currentTitle = sec.title;
                 chapterStartPage = sec.globalStartPage;
@@ -645,10 +652,10 @@
             }
         }
         if (currentTitle !== null) {
-            chapters.push({ title: currentTitle, startPage: chapterStartPage, startIndex });
+            chapters.push({ title: currentTitle, startPage: chapterStartPage, startIndex, endIndex: sections.length - 1 });
         }
 
-        // Si no hay capítulos o el primero empieza después de la portada, añadir "Portada"
+        // Portada si no hay capítulos o el primero empieza después de 0
         if (chapters.length === 0 || chapters[0].startPage > 0) {
             const portadaDiv = document.createElement('div');
             portadaDiv.className = 'chapter-item';
@@ -658,22 +665,32 @@
                 $chaptersOverlay.classList.remove('active');
                 hideOptionsPanel();
             });
+            // Marcar como actual si el índice actual es 0 (asumimos portada)
+            if (currentIndex === 0) {
+                portadaDiv.classList.add('current-chapter');
+            }
             $chaptersList.appendChild(portadaDiv);
         }
 
-        // Crear items para cada capítulo
+        // Crear items
         chapters.forEach(ch => {
             const div = document.createElement('div');
             div.className = 'chapter-item';
+            // Verdadero resaltado: el índice actual está dentro del rango de este capítulo
+            if (currentIndex >= ch.startIndex && currentIndex <= ch.endIndex) {
+                div.classList.add('current-chapter');
+            }
             const pagesLeft = Math.max(0, totalPages - ch.startPage);
             const percent = Math.round((ch.startPage / totalPages) * 100);
             div.innerHTML = `<span class="chapter-title">${escapeHtml(ch.title)}</span><span class="chapter-page"><span>${pagesLeft}</span><span style="margin-left:12px;">${percent}%</span></span>`;
             div.addEventListener('click', () => {
-                // Usar directamente el índice de inicio almacenado
                 const markers = $readerContainer.querySelectorAll('.chapter-marker');
                 if (markers[ch.startIndex]) {
-                    const top = markers[ch.startIndex].getBoundingClientRect().top - $readerContainer.getBoundingClientRect().top + $readerContainer.scrollTop;
-                    $readerContainer.scrollTo({ top, behavior:'smooth' });
+                    const markerRect = markers[ch.startIndex].getBoundingClientRect();
+                    const containerRect = $readerContainer.getBoundingClientRect();
+                    const top = markerRect.top - containerRect.top + $readerContainer.scrollTop;
+                    const targetScroll = top - $readerContainer.clientHeight * 0.35;
+                    $readerContainer.scrollTo({ top: Math.max(0, targetScroll), behavior:'smooth' });
                 }
                 $chaptersOverlay.classList.remove('active');
                 hideOptionsPanel();
