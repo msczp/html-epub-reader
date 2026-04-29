@@ -336,22 +336,19 @@
     $clearNoteBtn.addEventListener('click', () => { $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkNote.focus(); });
     $bookmarkNote.addEventListener('input', () => { $clearNoteBtn.classList.toggle('visible', $bookmarkNote.value.length > 0); autoResizeTextarea(); });
 
-    function removeAllLinks(html) {
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-        const links = doc.querySelectorAll('a');
-        links.forEach(link => {
-            const parent = link.parentNode;
-            while (link.firstChild) {
-                parent.insertBefore(link.firstChild, link);
+    // Función para convertir enlaces internos en enlaces navegables dentro del lector
+    function fixInternalLinks(html, hrefToIndex) {
+        return html.replace(/<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi, (match, href) => {
+            if (href.startsWith('http') || href.startsWith('#')) return match;
+            const cleanHref = href.split('#')[0].trim();
+            const bare = cleanHref.split('/').pop();
+            let targetIndex = hrefToIndex.get(cleanHref);
+            if (targetIndex === undefined) targetIndex = hrefToIndex.get(bare);
+            if (targetIndex !== undefined) {
+                return match.replace(/href\s*=\s*["'][^"']+["']/i, 'href="#').replace('<a ', `<a data-chapter-link="${targetIndex}" `);
             }
-            parent.removeChild(link);
+            return match.replace(/href\s*=\s*["'][^"']+["']/i, 'href="#"');
         });
-        const all = doc.body.querySelectorAll('*');
-        all.forEach(el => {
-            if (el.hasAttribute('href')) el.removeAttribute('href');
-            if (el.hasAttribute('onclick')) el.removeAttribute('onclick');
-        });
-        return doc.body.innerHTML;
     }
 
     async function processEpub(arrayBuffer) {
@@ -447,7 +444,8 @@
                 return dataUrl ? `<${tag} ${before}href="${dataUrl}" ${after}>` : m;
             });
 
-            html = removeAllLinks(html);
+            // Convertir enlaces internos para navegación en el lector
+            html = fixInternalLinks(html, hrefToIndex);
 
             const text = stripHtml(html);
             const charCount = text.length;
@@ -551,6 +549,7 @@
                 markers.forEach((marker, index) => { if (index > 0) { const separator = document.createElement('div'); separator.className = 'chapter-separator'; marker.parentNode.insertBefore(separator, marker); } });
             }
 
+            // Navegación interna mediante enlaces
             $readerContainer.addEventListener('click', e => {
                 const link = e.target.closest('a[data-chapter-link]');
                 if (!link) return;
@@ -625,19 +624,17 @@
     $searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') { const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); } });
     $searchResultsOverlay.addEventListener('click', e => { if (e.target === $searchResultsOverlay) $searchResultsOverlay.classList.remove('active'); });
 
-    // ---------- CAPÍTULOS con resaltado exacto (solo negrita) ----------
+    // ---------- CAPÍTULOS (resaltado exacto, solo negrita, navegación al 34%) ----------
     $btnChapters.addEventListener('click', () => {
         if (!currentBookData?.structure?.sections) return;
         const sections = currentBookData.structure.sections;
         const totalPages = currentBookData.structure.totalPages || 1;
         $chaptersList.innerHTML = '';
 
-        // Determinar el índice de sección actual
         const st = $readerContainer.scrollTop;
         const currentSec = findCurrentSection(st);
         const currentIndex = currentSec ? currentSec.index : 0;
 
-        // Construir capítulos con rango de secciones
         const chapters = [];
         let currentTitle = null, chapterStartPage = 0, startIndex = 0;
         for (let i = 0; i < sections.length; i++) {
@@ -655,7 +652,6 @@
             chapters.push({ title: currentTitle, startPage: chapterStartPage, startIndex, endIndex: sections.length - 1 });
         }
 
-        // Portada si no hay capítulos o el primero empieza después de 0
         if (chapters.length === 0 || chapters[0].startPage > 0) {
             const portadaDiv = document.createElement('div');
             portadaDiv.className = 'chapter-item';
@@ -665,18 +661,15 @@
                 $chaptersOverlay.classList.remove('active');
                 hideOptionsPanel();
             });
-            // Marcar como actual si el índice actual es 0 (asumimos portada)
             if (currentIndex === 0) {
                 portadaDiv.classList.add('current-chapter');
             }
             $chaptersList.appendChild(portadaDiv);
         }
 
-        // Crear items
         chapters.forEach(ch => {
             const div = document.createElement('div');
             div.className = 'chapter-item';
-            // Verdadero resaltado: el índice actual está dentro del rango de este capítulo
             if (currentIndex >= ch.startIndex && currentIndex <= ch.endIndex) {
                 div.classList.add('current-chapter');
             }
@@ -689,7 +682,7 @@
                     const markerRect = markers[ch.startIndex].getBoundingClientRect();
                     const containerRect = $readerContainer.getBoundingClientRect();
                     const top = markerRect.top - containerRect.top + $readerContainer.scrollTop;
-                    const targetScroll = top - $readerContainer.clientHeight * 0.335;
+                    const targetScroll = top - $readerContainer.clientHeight * 0.34;
                     $readerContainer.scrollTo({ top: Math.max(0, targetScroll), behavior:'smooth' });
                 }
                 $chaptersOverlay.classList.remove('active');
