@@ -234,6 +234,26 @@
             font-weight: bold;
         }
 
+        /* Botón de retorno de enlace */
+        #back-link-btn {
+            display: none;
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            z-index: 30;
+            background: rgba(255,255,255,0.92);
+            border-radius: 50%;
+            width: 34px;
+            height: 34px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+            cursor: pointer;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            color: var(--text);
+        }
+        #back-link-btn.show { display: flex; }
+
         .add-bookmark-btn { display: block; width: 100%; padding: 8px; margin-bottom: 8px; background: #888; color: #fff; border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer; text-align: center; }
         .bookmark-form { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
         .note-wrapper { position: relative; }
@@ -509,6 +529,10 @@
     let saveTimer = null, isRestoring = false, scrollRAF = null, lastScroll = -1, bookStyleElement = null;
     let optionsVisible = false, globalCharMapping = null, headerClickHandler = null;
 
+    // Nuevas variables para el botón de retorno de enlace
+    let backLinkBtn = null;
+    let lastLinkScroll = null;
+
     function renderChapterMarkers() { if (!currentBookData?.structure?.sections || !currentBookData.structure.totalPages) return; const totalPages = currentBookData.structure.totalPages, sections = currentBookData.structure.sections; $chapterMarkers.innerHTML = ''; sections.forEach(sec => { if (sec.globalStartPage === 0) return; const leftPercent = (sec.globalStartPage / totalPages) * 100; const marker = document.createElement('div'); marker.className = 'chapter-marker-item'; marker.style.left = leftPercent + '%'; $chapterMarkers.appendChild(marker); }); }
 
     function getCurrentHeadingText(scrollTop) {
@@ -530,6 +554,10 @@
     function openBookForReading(bookId) {
         if (saveTimer) clearTimeout(saveTimer); if (scrollRAF) cancelAnimationFrame(scrollRAF); cleanupScrollDetection(); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; }
         $readerContainer.innerHTML = ''; sectionDOMRefs = []; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; lastScroll = -1; currentBookId = bookId; optionsVisible = false; $optionsPanel.classList.remove('visible'); $searchInput.value = ''; $clearSearchBtn.classList.remove('visible');
+        // Limpiar botón de retorno anterior
+        if (backLinkBtn) { backLinkBtn.remove(); backLinkBtn = null; }
+        lastLinkScroll = null;
+
         dbGetBook(bookId).then(bookData => {
             if (!bookData?.structure?.sections) { alert('El libro no tiene estructura válida.'); return; }
             currentBookData = bookData; globalCharMapping = []; let charCounter = 0;
@@ -549,11 +577,21 @@
                 markers.forEach((marker, index) => { if (index > 0) { const separator = document.createElement('div'); separator.className = 'chapter-separator'; marker.parentNode.insertBefore(separator, marker); } });
             }
 
-            // Navegación interna mediante enlaces
+            // Crear el botón de retorno (oculto por defecto)
+            backLinkBtn = document.createElement('div');
+            backLinkBtn.id = 'back-link-btn';
+            backLinkBtn.innerHTML = '←';
+            backLinkBtn.title = 'Volver al punto anterior';
+            $readerContainer.appendChild(backLinkBtn);
+
+            // Navegación interna mediante enlaces (con guardado de posición)
             $readerContainer.addEventListener('click', e => {
                 const link = e.target.closest('a[data-chapter-link]');
                 if (!link) return;
                 e.preventDefault();
+                // Guardar la posición actual antes de saltar
+                lastLinkScroll = $readerContainer.scrollTop;
+                backLinkBtn.classList.add('show');
                 const targetIndex = parseInt(link.getAttribute('data-chapter-link'),10);
                 const markers = $readerContainer.querySelectorAll('.chapter-marker');
                 if (markers[targetIndex]) {
@@ -561,6 +599,28 @@
                     $readerContainer.scrollTo({ top, behavior:'smooth' });
                 }
             });
+
+            // Gestión del botón de retorno al hacer clic en cualquier parte
+            $readerContainer.addEventListener('click', function(e) {
+                // Si fue un enlace, ya se gestionó arriba y no hacemos nada más
+                if (e.target.closest('a[data-chapter-link]')) return;
+                const back = e.target.closest('#back-link-btn');
+                if (back) {
+                    // Volver a la posición guardada
+                    if (lastLinkScroll !== null) {
+                        $readerContainer.scrollTo({ top: lastLinkScroll, behavior:'smooth' });
+                        lastLinkScroll = null;
+                    }
+                    backLinkBtn.classList.remove('show');
+                    e.stopPropagation();
+                    return;
+                }
+                // Si se pulsa fuera, ocultar la flecha (sin cambiar de página)
+                if (backLinkBtn && backLinkBtn.classList.contains('show')) {
+                    backLinkBtn.classList.remove('show');
+                }
+            });
+
             history.pushState({ screen:'reader', bookId }, '', '#reader-'+bookId);
             setTimeout(() => { measureSectionPositions(); dbGetProgress(bookId).then(progress => { if (progress && progress.globalPage > 0) { isRestoring = true; restoreScrollPosition(progress); } else updatePositionFromScroll(); }); setupScrollDetection(); requestFullscreen(); }, 300);
         }).catch(err => { console.error('Error al abrir libro:', err); alert('Error al cargar el libro.'); });
