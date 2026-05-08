@@ -9,7 +9,7 @@
         :root {
             --bg: #e8e5df;
             --reader-bg: #f5f5f5;
-            --reader-bar: #eaeaea;
+            --reader-bar: #c8c8c8; /* más oscura */
             --reader-border: #d0d0d0;
             --surface: #ffffff;
             --text: #1a1a1a;
@@ -20,9 +20,8 @@
             --progress-height: 4px;
             --options-height: 46px;
             --search-row-height: 40px;
-            --info-bar-height: 32px;
-            --header-font-size: 0.85rem;
-            --header-line-height: 1.2;
+            --header-font-size: 0.75rem; /* más pequeña */
+            --header-line-height: 1.1;   /* menos altura */
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { height: 100%; width: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--reader-bar); color: var(--text); -webkit-tap-highlight-color: transparent; -webkit-font-smoothing: antialiased; }
@@ -71,49 +70,38 @@
         #upload-btn-fab:disabled { opacity: 0.5; pointer-events: none; }
         #file-input { display: none; }
 
-        /* Nueva barra de información superior (una sola línea) */
-        #reader-info-bar {
-            flex-shrink: 0;
-            cursor: pointer;
-            user-select: none;
-            background: var(--reader-bar);
-            color: var(--text);
-            z-index: 4;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 4px 12px;
-            font-size: var(--header-font-size);
-            line-height: var(--header-line-height);
-            height: var(--info-bar-height);
-            box-sizing: border-box;
+        #reader-header {
+            flex-shrink: 0; background: var(--reader-bar); z-index: 4; cursor: pointer; user-select: none;
+            display: flex; flex-direction: column; padding: 2px 0 0 0; gap: 0;
+            transition: background 0.15s, color 0.15s;
         }
-        #reader-info-bar.progress-flash { background: #555; color: #fff; }
-        #reader-info-bar.progress-flash .time-stat,
-        #reader-info-bar.progress-flash .bold-stat,
-        #reader-info-bar.progress-flash #header-chapter-title { color: #fff; }
-
-        .info-left, .info-center, .info-right {
-            display: flex;
-            align-items: center;
-            min-width: 0;
+        #reader-header.progress-flash { background: #555; color: #fff; }
+        #reader-header.progress-flash .time-stat,
+        #reader-header.progress-flash .bold-stat,
+        #reader-header.progress-flash #header-chapter-title { color: #fff; }
+        .header-row {
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: var(--header-font-size); line-height: var(--header-line-height);
+            color: inherit; font-weight: 400; margin: 0; min-height: auto;
+            padding: 0 8px;
         }
-        .info-left { justify-content: flex-start; flex: 0 1 auto; }
-        .info-center { justify-content: center; flex: 1 1 auto; text-align: center; }
-        .info-right { justify-content: flex-end; flex: 0 1 auto; gap: 4px; }
-
-        .chapter-title-header {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 100%;
-            display: block;
-            font-weight: 700;
-        }
+        .header-col { flex: 1; display: flex; align-items: center; min-width: 0; }
+        .header-col.left { justify-content: flex-start; }
+        .header-col.center { justify-content: center; text-align: center; }
+        .header-col.right { justify-content: flex-end; }
+        .stat-group { display: flex; align-items: center; justify-content: center; gap: 2px; white-space: nowrap; }
+        .stat-side { text-align: center; font-weight: 400; min-width: 2ch; }
+        .stat-center { text-align: center; font-weight: 400; min-width: 4ch; }
         .time-stat { font-weight: 400; color: inherit; }
         .bold-stat { font-weight: 700; color: inherit; }
+        #header-chapter-title { font-weight: 700; color: inherit; }
+        .chapter-title-header { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; display: block; }
 
-        /* Opciones (botones + búsqueda) */
+        #progress-bar-container { height: var(--progress-height); background: #ddd; position: relative; cursor: pointer; flex-shrink: 0; margin: 2px 0 0 0; }
+        #progress-bar-fill { height: 100%; background: #777; width: 0%; transition: width 0.3s ease; border-radius: 2px; position: absolute; top: 0; left: 0; }
+        #chapter-markers { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
+        .chapter-marker-item { position: absolute; top: 0; width: 2px; height: 100%; background-color: #999; opacity: 0.8; }
+
         #options-panel { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; background: var(--reader-bar); flex-shrink: 0; padding: 0; color: var(--text); }
         #options-panel.visible { max-height: calc(var(--options-height) + var(--search-row-height)); padding: 4px 0; }
         #options-buttons { display: flex; align-items: center; justify-content: stretch; padding: 4px 0; color: inherit; }
@@ -125,20 +113,6 @@
         .clear-input-btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #999; font-size: 1.2rem; cursor: pointer; padding: 2px 4px; line-height: 1; display: none; }
         .clear-input-btn.visible { display: block; }
         #btn-search-results { font-size: 1.6rem; background: transparent; border: none; color: inherit; cursor: pointer; padding: 2px 4px; display: flex; align-items: center; }
-
-        /* Barra de progreso en la parte inferior */
-        #progress-bar-container {
-            height: var(--progress-height);
-            background: #ddd;
-            position: relative;
-            cursor: pointer;
-            flex-shrink: 0;
-            margin: 0;
-            width: 100%;
-        }
-        #progress-bar-fill { height: 100%; background: #777; width: 0%; transition: width 0.3s ease; border-radius: 2px; position: absolute; top: 0; left: 0; }
-        #chapter-markers { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
-        .chapter-marker-item { position: absolute; top: 0; width: 2px; height: 100%; background-color: #999; opacity: 0.8; }
 
         .temp-highlight { background-color: #cccccc; border-radius: 2px; transition: background-color 0.4s ease; }
         #reader-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; padding: 16px 18px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font-family: 'Georgia', 'Palatino Linotype', serif; color: #1f1f1f; width: 100%; margin: 0 auto; word-wrap: break-word; overflow-x: hidden; background: var(--reader-bg); scrollbar-width: none; -ms-overflow-style: none; }
@@ -215,17 +189,24 @@
 </div>
 
 <div id="reader-screen" class="screen hidden">
-    <!-- Barra superior con tiempo / título / páginas -->
-    <div id="reader-info-bar">
-        <div class="info-left"><span class="time-stat" id="info-center">--</span></div>
-        <div class="info-center"><span class="chapter-title-header" id="header-chapter-title">--</span></div>
-        <div class="info-right">
-            <span class="bold-stat" id="ind-pages-left-chapter">--</span>
-            <span id="info-percent">--</span>
-            <span class="bold-stat" id="info-pages-left">--</span>
+    <div id="reader-header">
+        <div class="header-row">
+            <div class="header-col left"><span class="time-stat" id="info-center">--</span></div>
+            <div class="header-col center"><span class="chapter-title-header" id="header-chapter-title">--</span></div>
+            <div class="header-col right">
+                <div class="stat-group">
+                    <span class="stat-side bold-stat" id="ind-pages-left-chapter">--</span>
+                    <span class="stat-center" id="info-percent">--</span>
+                    <span class="stat-side bold-stat" id="info-pages-left">--</span>
+                </div>
+            </div>
+        </div>
+        <div id="progress-bar-container">
+            <div id="progress-bar-fill"></div>
+            <div id="chapter-markers"></div>
         </div>
     </div>
-    <div id="reader-container"></div>
+
     <div id="options-panel">
         <div id="options-buttons">
             <button class="opt-btn" id="btn-bookmarks" title="Marcadores">⚐</button>
@@ -238,9 +219,7 @@
             <button id="btn-search-results" title="Buscar">⌕</button>
         </div>
     </div>
-    <!-- Barra de progreso en la parte inferior -->
-    <div id="progress-bar-container"><div id="progress-bar-fill"></div><div id="chapter-markers"></div></div>
-
+    <div id="reader-container"></div>
     <div id="search-results-overlay" class="search-results-overlay"><div class="search-results-modal" id="search-results-modal"><h3>Resultados</h3><div id="search-results-list"></div></div></div>
     <div id="chapters-overlay" class="chapters-overlay"><div class="chapters-modal" id="chapters-modal"><h3>Capítulos</h3><div id="chapters-list"></div></div></div>
     <div id="bookmarks-overlay" class="bookmarks-overlay"><div class="bookmarks-modal" id="bookmarks-modal"><h3>Marcadores</h3><button class="add-bookmark-btn" id="btn-add-bookmark">+ Añadir marcador</button><div class="bookmark-form" id="bookmark-form" style="display:none;"><div class="note-wrapper"><textarea id="bookmark-note" class="note-input" placeholder="Nota (opcional)..." rows="1"></textarea><button class="note-clear-btn" id="clear-note-btn" title="Borrar nota">✕</button></div><div class="bookmark-form-buttons"><button id="btn-cancel-bookmark">Cancelar</button><button class="primary" id="btn-save-bookmark">Guardar</button></div></div><div id="bookmarks-list"></div></div></div>
@@ -251,7 +230,7 @@
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
-    const $libraryScreen = $('#library-screen'), $readerScreen = $('#reader-screen'), $bookList = $('#book-list'), $fileInput = $('#file-input'), $uploadFab = $('#upload-btn-fab'), $readerContainer = $('#reader-container'), $optionsPanel = $('#options-panel'), $readerInfoBar = $('#reader-info-bar'), $headerChapterTitle = $('#header-chapter-title'), $indPagesLeftChapter = $('#ind-pages-left-chapter'), $infoCenter = $('#info-center'), $infoPercent = $('#info-percent'), $infoPagesLeft = $('#info-pages-left'), $processingOverlay = $('#processing-overlay'), $procMsg = $('#proc-msg'), $progressBarFill = $('#progress-bar-fill'), $progressBarContainer = $('#progress-bar-container'), $chapterMarkers = $('#chapter-markers'), $btnBackLibrary = $('#btn-back-library'), $btnChapters = $('#btn-chapters'), $btnBookmarks = $('#btn-bookmarks'), $btnFullscreen = $('#btn-fullscreen'), $searchRow = $('#search-row'), $searchInput = $('#search-input'), $clearSearchBtn = $('#clear-search-btn'), $btnSearchResults = $('#btn-search-results'), $searchResultsOverlay = $('#search-results-overlay'), $searchResultsList = $('#search-results-list'), $chaptersOverlay = $('#chapters-overlay'), $chaptersList = $('#chapters-list'), $bookmarksOverlay = $('#bookmarks-overlay'), $bookmarksList = $('#bookmarks-list'), $btnAddBookmark = $('#btn-add-bookmark'), $bookmarkForm = $('#bookmark-form'), $bookmarkNote = $('#bookmark-note'), $clearNoteBtn = $('#clear-note-btn'), $btnSaveBookmark = $('#btn-save-bookmark'), $btnCancelBookmark = $('#btn-cancel-bookmark'), $backLinkBtn = $('#back-link-btn');
+    const $libraryScreen = $('#library-screen'), $readerScreen = $('#reader-screen'), $bookList = $('#book-list'), $fileInput = $('#file-input'), $uploadFab = $('#upload-btn-fab'), $readerContainer = $('#reader-container'), $optionsPanel = $('#options-panel'), $headerChapterTitle = $('#header-chapter-title'), $indPagesLeftChapter = $('#ind-pages-left-chapter'), $infoCenter = $('#info-center'), $infoPercent = $('#info-percent'), $infoPagesLeft = $('#info-pages-left'), $processingOverlay = $('#processing-overlay'), $procMsg = $('#proc-msg'), $progressBarFill = $('#progress-bar-fill'), $progressBarContainer = $('#progress-bar-container'), $chapterMarkers = $('#chapter-markers'), $btnBackLibrary = $('#btn-back-library'), $btnChapters = $('#btn-chapters'), $btnBookmarks = $('#btn-bookmarks'), $btnFullscreen = $('#btn-fullscreen'), $searchRow = $('#search-row'), $searchInput = $('#search-input'), $clearSearchBtn = $('#clear-search-btn'), $btnSearchResults = $('#btn-search-results'), $searchResultsOverlay = $('#search-results-overlay'), $searchResultsList = $('#search-results-list'), $chaptersOverlay = $('#chapters-overlay'), $chaptersList = $('#chapters-list'), $bookmarksOverlay = $('#bookmarks-overlay'), $bookmarksList = $('#bookmarks-list'), $btnAddBookmark = $('#btn-add-bookmark'), $bookmarkForm = $('#bookmark-form'), $bookmarkNote = $('#bookmark-note'), $clearNoteBtn = $('#clear-note-btn'), $btnSaveBookmark = $('#btn-save-bookmark'), $btnCancelBookmark = $('#btn-cancel-bookmark'), $readerHeader = $('#reader-header'), $backLinkBtn = $('#back-link-btn');
 
     const DB_NAME = 'epub_reader_v91';
     let db, editingBookmarkId = null;
@@ -278,7 +257,7 @@
     function extractFirstHeading(html) { const doc = new DOMParser().parseFromString(html,'text/html'); const h = doc.querySelector('h1,h2,h3,h4'); return h ? h.textContent.trim() : null; }
     function splitIntoPages(text, charsPerPage=2000) { const pages = []; if (!text?.length) return ['']; let rem = text; while (rem.length > charsPerPage) { let cut = charsPerPage; const slice = rem.substr(charsPerPage,120); const m = slice.match(/[\s.,;:!?¡¿—\-'"»)]/); if (m?.index !== undefined) cut = charsPerPage + m.index + 1; pages.push(rem.substring(0,cut).trim()); rem = rem.substring(cut).trim(); } if (rem) pages.push(rem.trim()); return pages.length ? pages : ['']; }
     function blobToBase64(blob) { return new Promise((res, rej) => { const reader = new FileReader(); reader.onloadend = () => res(reader.result); reader.onerror = rej; reader.readAsDataURL(blob); }); }
-    // Ya no mostramos la hora del dispositivo
+
     function hideOptionsPanel() { optionsVisible = false; $optionsPanel.classList.remove('visible'); }
 
     function requestFullscreen() {
@@ -638,7 +617,7 @@
     function measureSectionPositions() { if (!currentBookData?.structure?.sections) return; sectionDOMRefs = []; const markers = $readerContainer.querySelectorAll('.chapter-marker'); markers.forEach(marker => { const idx = parseInt(marker.dataset.chapterIndex,10); const rect = marker.getBoundingClientRect(); const containerRect = $readerContainer.getBoundingClientRect(); const top = rect.top - containerRect.top + $readerContainer.scrollTop; let nextMarker = marker.nextElementSibling; while (nextMarker && !nextMarker.classList.contains('chapter-marker')) nextMarker = nextMarker.nextElementSibling; let height; if (nextMarker) { const nextRect = nextMarker.getBoundingClientRect(); height = (nextRect.top - containerRect.top + $readerContainer.scrollTop) - top; } else height = $readerContainer.scrollHeight - top; sectionDOMRefs.push({ index: idx, offsetTop: top, height: Math.max(height,100) }); }); if (sectionDOMRefs.length === 0 && currentBookData.structure.sections.length > 0) sectionDOMRefs.push({ index:0, offsetTop:0, height: $readerContainer.scrollHeight }); }
     function findCurrentSection(scrollTop) { const container = $readerContainer; const clientHeight = container.clientHeight; const triggerY = clientHeight * 0.33; for (let i = sectionDOMRefs.length-1; i>=0; i--) { if (scrollTop >= sectionDOMRefs[i].offsetTop - triggerY) return sectionDOMRefs[i]; } return sectionDOMRefs[0] || null; }
     function updatePositionFromScroll() { if (!currentBookData?.structure?.sections || isRestoring) return; const container = $readerContainer; const st = container.scrollTop; const sh = container.scrollHeight; const ch = container.clientHeight; if (sh <= ch) { updateIndicators(1,0,1); return; } const sec = findCurrentSection(st); if (!sec) return; const idx = sec.index; const sections = currentBookData.structure.sections; if (idx >= sections.length) return; const sData = sections[idx]; const start = sec.offsetTop; const height = sec.height || 1; const progress = Math.max(0, Math.min(1, (st-start)/height)); const pageInChapter = Math.min(Math.floor(progress*sData.pageCount)+1, sData.pageCount||1); const globalPage = sData.globalStartPage + pageInChapter; updateIndicators(Math.max(1, Math.min(globalPage, currentBookData.structure.totalPages||1)), idx, Math.max(1, pageInChapter)); const totalPages = currentBookData.structure.totalPages||1; const percent = Math.round((globalPage/totalPages)*100); $progressBarFill.style.width = percent+'%'; }
-    function flashProgress() { $readerInfoBar.classList.add('progress-flash'); setTimeout(() => $readerInfoBar.classList.remove('progress-flash'), 150); }
+    function flashProgress() { $readerHeader.classList.add('progress-flash'); setTimeout(() => $readerHeader.classList.remove('progress-flash'), 150); }
     function updateIndicators(gPage, chIdx, chPage) {
         const s = currentBookData?.structure; if (!s) return;
         const sec = s.sections[chIdx]; if (!sec) return;
@@ -661,8 +640,8 @@
     }
     function scheduleProgressSave(gPage, chIdx, chPage) { clearTimeout(saveTimer); saveTimer = setTimeout(async () => { if (!currentBookId) return; const top = $readerContainer.scrollTop; await dbSaveProgress(currentBookId, { globalPage: gPage, spineIndex: chIdx, pageInChapter: chPage, scrollTop: top, totalPages: currentBookData?.structure?.totalPages || 0 }); try { localStorage.setItem('last_progress_v91_'+currentBookId, JSON.stringify({ gPage, chIdx, chPage, top, ts: Date.now() })); } catch(e) {} }, 1000); }
     function toggleOptionsPanel() { optionsVisible = !optionsVisible; $optionsPanel.classList.toggle('visible', optionsVisible); }
-    function setupScrollDetection() { const container = $readerContainer; const scrollHandler = () => { if (scrollRAF) return; scrollRAF = requestAnimationFrame(() => { scrollRAF = null; const st = container.scrollTop; if (Math.abs(st-lastScroll) > 2) { lastScroll = st; if (!isRestoring) updatePositionFromScroll(); } }); }; container.addEventListener('scroll', scrollHandler, { passive: true }); container._scrollHandler = scrollHandler; if (headerClickHandler) $readerInfoBar.removeEventListener('click', headerClickHandler); headerClickHandler = (e) => { e.stopPropagation(); toggleOptionsPanel(); }; $readerInfoBar.addEventListener('click', headerClickHandler); window.addEventListener('resize', () => { clearTimeout(window._resizeTimer); window._resizeTimer = setTimeout(() => { measureSectionPositions(); updatePositionFromScroll(); }, 400); }); }
-    function cleanupScrollDetection() { const container = $readerContainer; if (container._scrollHandler) { container.removeEventListener('scroll', container._scrollHandler); container._scrollHandler = null; } if (headerClickHandler) { $readerInfoBar.removeEventListener('click', headerClickHandler); headerClickHandler = null; } if (scrollRAF) cancelAnimationFrame(scrollRAF); clearTimeout(saveTimer); clearTimeout(window._resizeTimer); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; } }
+    function setupScrollDetection() { const container = $readerContainer; const scrollHandler = () => { if (scrollRAF) return; scrollRAF = requestAnimationFrame(() => { scrollRAF = null; const st = container.scrollTop; if (Math.abs(st-lastScroll) > 2) { lastScroll = st; if (!isRestoring) updatePositionFromScroll(); } }); }; container.addEventListener('scroll', scrollHandler, { passive: true }); container._scrollHandler = scrollHandler; if (headerClickHandler) $readerHeader.removeEventListener('click', headerClickHandler); headerClickHandler = (e) => { e.stopPropagation(); toggleOptionsPanel(); }; $readerHeader.addEventListener('click', headerClickHandler); window.addEventListener('resize', () => { clearTimeout(window._resizeTimer); window._resizeTimer = setTimeout(() => { measureSectionPositions(); updatePositionFromScroll(); }, 400); }); }
+    function cleanupScrollDetection() { const container = $readerContainer; if (container._scrollHandler) { container.removeEventListener('scroll', container._scrollHandler); container._scrollHandler = null; } if (headerClickHandler) { $readerHeader.removeEventListener('click', headerClickHandler); headerClickHandler = null; } if (scrollRAF) cancelAnimationFrame(scrollRAF); clearTimeout(saveTimer); clearTimeout(window._resizeTimer); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; } }
     async function restoreScrollPosition(progress) { await new Promise(r => setTimeout(r, 400)); measureSectionPositions(); const container = $readerContainer; const sh = container.scrollHeight; const ch = container.clientHeight; if (typeof progress.scrollTop === 'number' && progress.scrollTop > 0 && progress.scrollTop < sh) container.scrollTop = progress.scrollTop; else container.scrollTop = Math.max(0, (progress.globalPage/(progress.totalPages||1))*(sh-ch)); setTimeout(() => { if (container.scrollTop < 5 && progress.scrollTop > 100) container.scrollTop = progress.scrollTop; isRestoring = false; measureSectionPositions(); updatePositionFromScroll(); }, 400); }
     function closeReader() { if (isClosingReader) return; isClosingReader = true; cleanupScrollDetection(); $readerContainer.innerHTML = ''; sectionDOMRefs = []; currentBookId = null; currentBookData = null; globalCharMapping = null; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; $readerScreen.classList.add('hidden'); $libraryScreen.classList.remove('hidden'); if (history.state && history.state.screen === 'reader') history.back(); exitFullscreen(); renderLibrary(); setTimeout(() => { isClosingReader = false; }, 300); }
     window.addEventListener('popstate', e => { if (e.state && e.state.screen === 'reader') closeReader(); });
@@ -748,12 +727,14 @@
         if (currentChapterIdx >= 0) {
             const sectionItems = items.filter(item => item.sectionIndex === currentChapterIdx);
             if (sectionItems.length > 0) {
+                // Buscar el último subtítulo visible en esta sección
                 let bestItem = null;
                 for (const item of sectionItems) {
                     if (item.top <= threshold) {
                         bestItem = item;
                     }
                 }
+                // Si no hay ninguno visible, tomar el primero de la sección
                 if (!bestItem) {
                     bestItem = sectionItems[0];
                 }
@@ -761,6 +742,7 @@
             }
         }
 
+        // Fallback clásico si no se determinó
         if (currentIdx === -1) {
             for (let i = 0; i < items.length; i++) {
                 if (items[i].top <= threshold) currentIdx = i;
