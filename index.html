@@ -9,7 +9,7 @@
         :root {
             --bg: #e8e5df;
             --reader-bg: #f5f5f5;
-            --reader-bar: #c8c8c8; /* más oscura */
+            --reader-bar: #eaeaea;
             --reader-border: #d0d0d0;
             --surface: #ffffff;
             --text: #1a1a1a;
@@ -20,8 +20,8 @@
             --progress-height: 4px;
             --options-height: 46px;
             --search-row-height: 40px;
-            --header-font-size: 0.75rem; /* más pequeña */
-            --header-line-height: 1.1;   /* menos altura */
+            --header-font-size: 0.85rem;
+            --header-line-height: 1.2;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { height: 100%; width: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--reader-bar); color: var(--text); -webkit-tap-highlight-color: transparent; -webkit-font-smoothing: antialiased; }
@@ -71,8 +71,16 @@
         #file-input { display: none; }
 
         #reader-header {
-            flex-shrink: 0; background: var(--reader-bar); z-index: 4; cursor: pointer; user-select: none;
-            display: flex; flex-direction: column; padding: 2px 0 0 0; gap: 0;
+            flex-shrink: 0;
+            background: var(--reader-bar);
+            z-index: 4;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            flex-direction: column;
+            padding: 6px 12px 2px;          /* antes 6px 0 0 0 */
+            gap: 2px;                       /* reducido porque hay una sola fila */
+            color: var(--text);
             transition: background 0.15s, color 0.15s;
         }
         #reader-header.progress-flash { background: #555; color: #fff; }
@@ -80,24 +88,69 @@
         #reader-header.progress-flash .bold-stat,
         #reader-header.progress-flash #header-chapter-title { color: #fff; }
         .header-row {
-            display: flex; align-items: center; justify-content: space-between;
-            font-size: var(--header-font-size); line-height: var(--header-line-height);
-            color: inherit; font-weight: 400; margin: 0; min-height: auto;
-            padding: 0 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: var(--header-font-size);
+            line-height: var(--header-line-height);
+            color: inherit;
+            font-weight: 400;
+            margin: 0;
+            min-height: auto;
         }
-        .header-col { flex: 1; display: flex; align-items: center; min-width: 0; }
-        .header-col.left { justify-content: flex-start; }
-        .header-col.center { justify-content: center; text-align: center; }
-        .header-col.right { justify-content: flex-end; }
-        .stat-group { display: flex; align-items: center; justify-content: center; gap: 2px; white-space: nowrap; }
-        .stat-side { text-align: center; font-weight: 400; min-width: 2ch; }
-        .stat-center { text-align: center; font-weight: 400; min-width: 4ch; }
+        .header-col {
+            display: flex;
+            align-items: center;
+            min-width: 0;
+        }
+        .header-col.left-time {
+            flex: 0 0 auto;
+            white-space: nowrap;
+            padding-right: 6px;
+        }
+        .header-col.center-title {
+            flex: 1 1 auto;
+            justify-content: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding: 0 6px;
+        }
+        .header-col.right-stats {
+            flex: 0 0 auto;
+            white-space: nowrap;
+            padding-left: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+        .stat-group {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .stat-side {
+            text-align: center;
+            font-weight: 400;
+            min-width: 2ch;
+        }
+        .stat-center {
+            text-align: center;
+            font-weight: 400;
+            min-width: 4ch;
+        }
         .time-stat { font-weight: 400; color: inherit; }
         .bold-stat { font-weight: 700; color: inherit; }
         #header-chapter-title { font-weight: 700; color: inherit; }
-        .chapter-title-header { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; display: block; }
+        .chapter-title-header {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+            display: block;
+        }
 
-        #progress-bar-container { height: var(--progress-height); background: #ddd; position: relative; cursor: pointer; flex-shrink: 0; margin: 2px 0 0 0; }
+        #progress-bar-container { height: var(--progress-height); background: #ddd; position: relative; cursor: pointer; flex-shrink: 0; margin: 4px 0 0 0; }
         #progress-bar-fill { height: 100%; background: #777; width: 0%; transition: width 0.3s ease; border-radius: 2px; position: absolute; top: 0; left: 0; }
         #chapter-markers { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
         .chapter-marker-item { position: absolute; top: 0; width: 2px; height: 100%; background-color: #999; opacity: 0.8; }
@@ -191,9 +244,9 @@
 <div id="reader-screen" class="screen hidden">
     <div id="reader-header">
         <div class="header-row">
-            <div class="header-col left"><span class="time-stat" id="info-center">--</span></div>
-            <div class="header-col center"><span class="chapter-title-header" id="header-chapter-title">--</span></div>
-            <div class="header-col right">
+            <div class="header-col left-time"><span class="time-stat" id="info-center">--</span></div>
+            <div class="header-col center-title"><span class="chapter-title-header" id="header-chapter-title">--</span></div>
+            <div class="header-col right-stats">
                 <div class="stat-group">
                     <span class="stat-side bold-stat" id="ind-pages-left-chapter">--</span>
                     <span class="stat-center" id="info-percent">--</span>
@@ -201,12 +254,8 @@
                 </div>
             </div>
         </div>
-        <div id="progress-bar-container">
-            <div id="progress-bar-fill"></div>
-            <div id="chapter-markers"></div>
-        </div>
+        <div id="progress-bar-container"><div id="progress-bar-fill"></div><div id="chapter-markers"></div></div>
     </div>
-
     <div id="options-panel">
         <div id="options-buttons">
             <button class="opt-btn" id="btn-bookmarks" title="Marcadores">⚐</button>
@@ -678,7 +727,6 @@
             }
             displayTitle = separateNumberFromTitle(displayTitle);
 
-            // Buscar el marcador de capítulo inmediatamente anterior en el DOM
             let sectionIndex = -1;
             let markerBefore = null;
             for (const marker of allMarkers) {
@@ -727,14 +775,12 @@
         if (currentChapterIdx >= 0) {
             const sectionItems = items.filter(item => item.sectionIndex === currentChapterIdx);
             if (sectionItems.length > 0) {
-                // Buscar el último subtítulo visible en esta sección
                 let bestItem = null;
                 for (const item of sectionItems) {
                     if (item.top <= threshold) {
                         bestItem = item;
                     }
                 }
-                // Si no hay ninguno visible, tomar el primero de la sección
                 if (!bestItem) {
                     bestItem = sectionItems[0];
                 }
@@ -742,7 +788,6 @@
             }
         }
 
-        // Fallback clásico si no se determinó
         if (currentIdx === -1) {
             for (let i = 0; i < items.length; i++) {
                 if (items[i].top <= threshold) currentIdx = i;
