@@ -78,8 +78,8 @@
             user-select: none;
             display: flex;
             flex-direction: column;
-            padding: 6px 12px 2px;          /* antes 6px 0 0 0 */
-            gap: 2px;                       /* reducido porque hay una sola fila */
+            padding: 6px 0 0 0;
+            gap: 0;
             color: var(--text);
             transition: background 0.15s, color 0.15s;
         }
@@ -88,6 +88,7 @@
         #reader-header.progress-flash .bold-stat,
         #reader-header.progress-flash #header-chapter-title { color: #fff; }
         .header-row {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -96,6 +97,7 @@
             color: inherit;
             font-weight: 400;
             margin: 0;
+            padding: 0 10px;              /* margen lateral para los elementos fijos */
             min-height: auto;
         }
         .header-col {
@@ -106,23 +108,37 @@
         .header-col.left-time {
             flex: 0 0 auto;
             white-space: nowrap;
+            order: 1;
+            z-index: 2;
+            background: inherit;           /* para que el fondo cubra si el título se superpone */
             padding-right: 6px;
-        }
-        .header-col.center-title {
-            flex: 1 1 auto;
-            justify-content: center;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            padding: 0 6px;
         }
         .header-col.right-stats {
             flex: 0 0 auto;
             white-space: nowrap;
+            order: 3;
+            z-index: 2;
+            background: inherit;
             padding-left: 6px;
             display: flex;
             align-items: center;
             justify-content: flex-end;
+        }
+        /* El título se ubica en el centro absoluto de la barra */
+        .header-col.center-title {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            top: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: calc(100% - 100px);  /* evita que choque con los laterales; ajusta según necesidad */
+            z-index: 1;
         }
         .stat-group {
             display: flex;
@@ -141,19 +157,49 @@
         }
         .time-stat { font-weight: 400; color: inherit; }
         .bold-stat { font-weight: 700; color: inherit; }
-        #header-chapter-title { font-weight: 700; color: inherit; }
+        #header-chapter-title { font-weight: normal; color: inherit; }
         .chapter-title-header {
-            white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             max-width: 100%;
             display: block;
         }
 
-        #progress-bar-container { height: var(--progress-height); background: #ddd; position: relative; cursor: pointer; flex-shrink: 0; margin: 4px 0 0 0; }
-        #progress-bar-fill { height: 100%; background: #777; width: 0%; transition: width 0.3s ease; border-radius: 2px; position: absolute; top: 0; left: 0; }
-        #chapter-markers { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
-        .chapter-marker-item { position: absolute; top: 0; width: 2px; height: 100%; background-color: #999; opacity: 0.8; }
+        #progress-bar-container {
+            height: var(--progress-height);
+            background: #ddd;
+            position: relative;
+            cursor: pointer;
+            flex-shrink: 0;
+            margin: 4px 0 0 0;
+            width: 100%;
+        }
+        #progress-bar-fill {
+            height: 100%;
+            background: #777;
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 2px;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #chapter-markers {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+        }
+        .chapter-marker-item {
+            position: absolute;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            background-color: #999;
+            opacity: 0.8;
+        }
 
         #options-panel { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; background: var(--reader-bar); flex-shrink: 0; padding: 0; color: var(--text); }
         #options-panel.visible { max-height: calc(var(--options-height) + var(--search-row-height)); padding: 4px 0; }
@@ -347,6 +393,7 @@
     }
 
     async function processEpub(arrayBuffer) {
+        /* … unchanged … */
         const zip = await JSZip.loadAsync(arrayBuffer);
         const containerFile = zip.file('META-INF/container.xml');
         if (!containerFile) throw new Error('Falta container.xml');
