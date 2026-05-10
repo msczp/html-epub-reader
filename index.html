@@ -97,7 +97,7 @@
             color: inherit;
             font-weight: 400;
             margin: 0;
-            padding: 0 10px;              /* margen lateral para los elementos fijos */
+            padding: 0 10px;
             min-height: auto;
         }
         .header-col {
@@ -110,7 +110,7 @@
             white-space: nowrap;
             order: 1;
             z-index: 2;
-            background: inherit;           /* para que el fondo cubra si el título se superpone */
+            background: inherit;
             padding-right: 6px;
         }
         .header-col.right-stats {
@@ -124,7 +124,6 @@
             align-items: center;
             justify-content: flex-end;
         }
-        /* El título se ubica en el centro absoluto de la barra */
         .header-col.center-title {
             position: absolute;
             left: 50%;
@@ -137,7 +136,7 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: calc(100% - 100px);  /* evita que choque con los laterales; ajusta según necesidad */
+            max-width: calc(100% - 100px);
             z-index: 1;
         }
         .stat-group {
@@ -902,6 +901,597 @@
     window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage > 0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } });
 
     (async () => { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader v91 listo'); })().catch(err => console.error('Error inicial:', err));
+})();
+</script>
+
+<!-- TTS integrado -->
+<script>
+(function() {
+    'use strict';
+
+    // ========== CONFIGURACIÓN ==========
+    const CONTENEDOR = '#reader-container';
+    const SELECTORES_TEXTO = [
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'p', 'blockquote', 'li',
+        'div.title', 'div.chapter-title', 'div.carta', 'div.informe', 'div.fecha',
+        '[class*="heading"]', '[class*="title"]', '[class*="chapter"]',
+        'figcaption'
+    ].join(', ');
+    const SELECTORES_IMAGEN = 'img, figure, picture, svg, [class*="image"], [class*="img"], [class*="illustration"]';
+    const SELECTOR_SEPARADOR_TAG = 'hr';
+    const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
+
+    const VELOCIDAD = 2.0;
+    const PAUSA_ENTRE_PARRAFOS = 150;
+    const DOBLE_TOQUE_MAX = 300;
+    const SCROLL_PORCENTAJE = 0.42;            // 42%
+    const SCROLL_TOLERANCIA = 5;              // píxeles de margen antes de corregir
+    const PAUSA_IMAGEN = 1000;
+    const PAUSA_SEPARADOR = 1200;
+    const LONGITUD_MINIMA_TEXTO = 1;
+    const BASE_CHARS_PER_SEC = 12.5;
+    const CORRECCION_VELOCIDAD = 1.0;
+
+    const FALLBACK_DELAY = 400;
+    const SCROLL_ANIMATION_MS = 500;          // animación de 500 ms
+
+    let leyendo = false;
+    let utterance = null;
+    let bloques = [];
+    let indiceBloque = -1;
+    let timeoutSig = null;
+    let ultimoToque = 0;
+    let toqueTimer = null;
+    let scrollContainer = null;
+    let wakeLock = null;
+
+    let currentElem = null;
+    let fullText = '';
+    let startOffsetGlobal = 0;
+
+    let onboundaryActive = false;
+    let fallbackTimer = null;
+    let lastBoundaryTime = 0;
+    let isAnimating = false;
+    let animFrameId = null;
+    let bloqueStartTime = 0;
+    let bloqueTotalDuration = 0;
+
+    let speakerBtn = null;
+    let selectionData = null;
+
+    // ========== SUPRESIÓN DEL MENÚ CONTEXTUAL ==========
+    document.addEventListener('contextmenu', function(e) {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) return;
+        const range = selection.getRangeAt(0);
+        const nodo = range.startContainer;
+        const parrafo = nodo.parentElement?.closest(SELECTORES_TEXTO);
+        if (parrafo && document.querySelector(CONTENEDOR)?.contains(parrafo)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, { capture: true, passive: false });
+
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+        ${CONTENEDOR} * {
+            -webkit-touch-callout: none !important;
+            -webkit-user-select: text !important;
+            user-select: text !important;
+        }
+    `;
+    document.head.appendChild(styleEl);
+
+    // ========== ELIMINACIÓN DE IDs (DESACTIVADA para preservar enlaces internos) ==========
+    // function eliminarIDs(container) { ... }
+    // function observarYLimpiar() { ... }
+    // observarYLimpiar();
+
+    // ========== WAKE LOCK ==========
+    async function requestWakeLock() {
+        if ('wakeLock' in navigator) {
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                wakeLock.addEventListener('release', () => { wakeLock = null; });
+            } catch (err) {}
+        }
+    }
+    function releaseWakeLock() {
+        if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+    }
+
+    // ========== SCROLL UTILITIES ==========
+    function obtenerScrollContainer() {
+        const contenedor = document.querySelector(CONTENEDOR);
+        if (!contenedor) return window;
+        const style = getComputedStyle(contenedor);
+        if (style.overflowY === 'auto' || style.overflowY === 'scroll' || contenedor.scrollHeight > contenedor.clientHeight) {
+            return contenedor;
+        }
+        return window;
+    }
+
+    function getScrollTop() {
+        return scrollContainer === window ? window.scrollY : scrollContainer.scrollTop;
+    }
+
+    function setScrollTop(value) {
+        if (scrollContainer === window) {
+            window.scrollTo(0, value);
+        } else {
+            scrollContainer.scrollTop = value;
+        }
+    }
+
+    function animateScrollTo(targetScroll, duration) {
+        if (isAnimating) {
+            cancelAnimationFrame(animFrameId);
+            isAnimating = false;
+        }
+        const start = getScrollTop();
+        const change = targetScroll - start;
+        if (Math.abs(change) < 0.5) return;
+
+        const startTime = performance.now();
+        isAnimating = true;
+
+        function step(now) {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            setScrollTop(start + change * ease);
+
+            if (progress < 1) {
+                animFrameId = requestAnimationFrame(step);
+            } else {
+                isAnimating = false;
+                animFrameId = null;
+            }
+        }
+        animFrameId = requestAnimationFrame(step);
+    }
+
+    function ajustarScrollAPalabra(globalChar) {
+        if (!currentElem) return;
+        const charPos = getCharPosition(currentElem, globalChar);
+        if (!charPos) return;
+
+        const container = document.querySelector(CONTENEDOR);
+        if (!container) return;
+        const cs = getComputedStyle(container);
+        const pTop = parseFloat(cs.paddingTop) || 0;
+        const contHeight = container.clientHeight;
+        const contRect = container.getBoundingClientRect();
+        const contentHeight = contHeight - pTop;
+        const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+
+        const delta = charPos.top - desiredTop;
+        if (Math.abs(delta) <= SCROLL_TOLERANCIA) return;
+
+        const targetScroll = getScrollTop() + delta;
+        animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+    }
+
+    function getCharPosition(elem, charIndex) {
+        const walker = document.createTreeWalker(elem, NodeFilter.SHOW_TEXT, null, false);
+        let current = 0;
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            const length = node.textContent.length;
+            if (current + length > charIndex) {
+                const offset = charIndex - current;
+                const range = document.createRange();
+                range.setStart(node, offset);
+                range.setEnd(node, Math.min(offset + 1, length));
+                const rect = range.getClientRects()[0];
+                if (rect) return { top: rect.top, left: rect.left };
+                return null;
+            }
+            current += length;
+        }
+        return null;
+    }
+
+    // ========== GESTIÓN DE BLOQUES ==========
+    function obtenerBloques() {
+        const contenedor = document.querySelector(CONTENEDOR);
+        if (!contenedor) return [];
+        const elementos = contenedor.querySelectorAll(
+            `${SELECTORES_TEXTO}, ${SELECTORES_IMAGEN}, ${SELECTOR_SEPARADOR_TAG}`
+        );
+        const lista = [];
+        const textosVistos = new Set();
+        for (const el of elementos) {
+            if (el.offsetParent === null && getComputedStyle(el).display === 'none') continue;
+
+            if (el.tagName === 'HR') {
+                lista.push({ tipo: 'separador', elemento: el });
+                continue;
+            }
+            if (el.matches(SELECTORES_IMAGEN)) {
+                lista.push({ tipo: 'imagen', elemento: el });
+                continue;
+            }
+
+            let texto = el.textContent.trim();
+            if (SEPARADOR_TEXTO.test(texto)) {
+                lista.push({ tipo: 'separador', elemento: el });
+                continue;
+            }
+            if (texto.length < LONGITUD_MINIMA_TEXTO) continue;
+            const key = el.tagName + '|' + texto;
+            if (textosVistos.has(key)) continue;
+            textosVistos.add(key);
+
+            lista.push({ tipo: 'texto', elemento: el, texto });
+        }
+        return lista;
+    }
+
+    function leerBloque(indice, callback, innerStartOffset = 0) {
+        if (!leyendo) return callback(false);
+        const bloque = bloques[indice];
+        if (!bloque) return callback(false);
+
+        if (bloque.tipo === 'separador') {
+            detenerSincronizacion();
+            setTimeout(() => callback(true), PAUSA_SEPARADOR);
+            return;
+        }
+        if (bloque.tipo === 'imagen') {
+            detenerSincronizacion();
+            callback(true);
+            return;
+        }
+
+        currentElem = bloque.elemento;
+        fullText = bloque.texto.replace(/\//g, ', ');
+        startOffsetGlobal = innerStartOffset;
+        const textoParaLeer = fullText.substring(startOffsetGlobal);
+
+        const charsPerSec = BASE_CHARS_PER_SEC * VELOCIDAD * CORRECCION_VELOCIDAD;
+        bloqueTotalDuration = (textoParaLeer.length / charsPerSec) * 1000;
+        bloqueStartTime = performance.now();
+
+        onboundaryActive = false;
+        lastBoundaryTime = 0;
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+
+        const u = new SpeechSynthesisUtterance(textoParaLeer);
+        u.lang = 'es-ES';
+        u.rate = VELOCIDAD;
+        u.pitch = 1.0;
+
+        u.onboundary = function(event) {
+            if (!leyendo || !currentElem) return;
+            onboundaryActive = true;
+            lastBoundaryTime = performance.now();
+            if (event.name === 'word' || event.name === 'sentence') {
+                const globalChar = event.charIndex + startOffsetGlobal;
+                ajustarScrollAPalabra(globalChar);
+            }
+        };
+
+        function startFallback() {
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            fallbackTimer = setTimeout(() => {
+                if (!leyendo || !currentElem) return;
+                const ahora = performance.now();
+                if (!onboundaryActive || (ahora - lastBoundaryTime > 700)) {
+                    const elapsed = ahora - bloqueStartTime;
+                    const progress = Math.min(elapsed / bloqueTotalDuration, 1);
+                    const estimatedGlobalChar = Math.floor(progress * (fullText.length - startOffsetGlobal)) + startOffsetGlobal;
+                    ajustarScrollAPalabra(estimatedGlobalChar);
+                }
+                if (leyendo) {
+                    fallbackTimer = setTimeout(startFallback, FALLBACK_DELAY);
+                }
+            }, FALLBACK_DELAY);
+        }
+        startFallback();
+
+        u.onend = () => {
+            detenerSincronizacion();
+            utterance = null;
+            callback(true);
+        };
+        u.onerror = () => {
+            detenerSincronizacion();
+            utterance = null;
+            callback(false);
+        };
+
+        utterance = u;
+        speechSynthesis.speak(u);
+    }
+
+    function detenerSincronizacion() {
+        clearTimeout(fallbackTimer);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        isAnimating = false;
+        animFrameId = null;
+        currentElem = null;
+    }
+
+    function procesarSiguienteBloque() {
+        if (timeoutSig) clearTimeout(timeoutSig);
+        if (!leyendo) return;
+
+        indiceBloque++;
+        if (indiceBloque >= bloques.length) {
+            detener();
+            return;
+        }
+
+        const bloque = bloques[indiceBloque];
+        if (bloque.elemento) {
+            const firstChar = getCharPosition(bloque.elemento, 0);
+            if (firstChar) {
+                const container = document.querySelector(CONTENEDOR);
+                const cs = getComputedStyle(container);
+                const pTop = parseFloat(cs.paddingTop) || 0;
+                const contHeight = container.clientHeight;
+                const contRect = container.getBoundingClientRect();
+                const contentHeight = contHeight - pTop;
+                const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+                const delta = firstChar.top - desiredTop;
+                const targetScroll = getScrollTop() + delta;
+                animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+            } else {
+                scrollElementoAlPorcentaje(bloque.elemento, SCROLL_PORCENTAJE);
+            }
+        }
+
+        let pausaPrevia = PAUSA_ENTRE_PARRAFOS;
+        if (bloque.tipo === 'imagen') pausaPrevia = PAUSA_IMAGEN;
+        else if (bloque.tipo === 'separador') pausaPrevia = 0;
+
+        timeoutSig = setTimeout(() => {
+            timeoutSig = null;
+            if (!leyendo) return;
+            if (bloque.tipo === 'imagen' || bloque.tipo === 'separador') {
+                procesarSiguienteBloque();
+            } else {
+                leerBloque(indiceBloque, (exito) => {
+                    if (exito) procesarSiguienteBloque();
+                });
+            }
+        }, pausaPrevia + 100);
+    }
+
+    function scrollElementoAlPorcentaje(elem, porcentaje) {
+        if (!elem) return;
+        const container = document.querySelector(CONTENEDOR);
+        if (!container) return;
+        const cs = getComputedStyle(container);
+        const pTop = parseFloat(cs.paddingTop) || 0;
+        const contHeight = container.clientHeight;
+        const contRect = container.getBoundingClientRect();
+        const contentHeight = contHeight - pTop;
+        const desiredTop = contRect.top + pTop + contentHeight * porcentaje;
+
+        const textNode = elem.firstChild;
+        let firstCharTop;
+        if (textNode && textNode.nodeType === Node.TEXT_NODE && textNode.length > 0) {
+            const range = document.createRange();
+            range.setStart(textNode, 0);
+            range.setEnd(textNode, 1);
+            const rect = range.getClientRects()[0];
+            firstCharTop = rect ? rect.top : elem.getBoundingClientRect().top;
+        } else {
+            firstCharTop = elem.getBoundingClientRect().top;
+        }
+
+        const currentScroll = getScrollTop();
+        let targetScroll;
+        if (scrollContainer === window) {
+            targetScroll = currentScroll + firstCharTop - desiredTop;
+        } else {
+            const contRect2 = container.getBoundingClientRect();
+            const relativeTop = firstCharTop - contRect2.top;
+            targetScroll = currentScroll + relativeTop - (desiredTop - contRect2.top);
+        }
+        animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+    }
+
+    // ========== INICIAR / DETENER ==========
+    function iniciar(parrafo) {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        detener();
+        const todos = obtenerBloques();
+        if (todos.length === 0) return;
+
+        let idx = todos.findIndex(b => b.elemento === parrafo);
+        if (idx === -1) {
+            const txt = parrafo.textContent.trim();
+            idx = todos.findIndex(b => b.tipo === 'texto' && b.elemento.textContent.trim() === txt);
+        }
+        if (idx === -1) return;
+
+        bloques = todos;
+        indiceBloque = idx - 1;
+        leyendo = true;
+        requestWakeLock();
+        scrollContainer = obtenerScrollContainer();
+        scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
+        procesarSiguienteBloque();
+    }
+
+    function iniciarDesdeSeleccion(parrafo, charIndex) {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        detener();
+        const todos = obtenerBloques();
+        if (todos.length === 0) return;
+
+        let idx = todos.findIndex(b => b.elemento === parrafo);
+        if (idx === -1) {
+            const txt = parrafo.textContent.trim();
+            idx = todos.findIndex(b => b.tipo === 'texto' && b.elemento.textContent.trim() === txt);
+        }
+        if (idx === -1) return;
+
+        bloques = todos;
+        indiceBloque = idx;
+        leyendo = true;
+        requestWakeLock();
+        scrollContainer = obtenerScrollContainer();
+
+        const pos = getCharPosition(parrafo, charIndex);
+        if (pos) {
+            const container = document.querySelector(CONTENEDOR);
+            const cs = getComputedStyle(container);
+            const pTop = parseFloat(cs.paddingTop) || 0;
+            const contHeight = container.clientHeight;
+            const contRect = container.getBoundingClientRect();
+            const contentHeight = contHeight - pTop;
+            const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+            const delta = pos.top - desiredTop;
+            const targetScroll = getScrollTop() + delta;
+            animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+        } else {
+            scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
+        }
+
+        leerBloque(idx, (exito) => {
+            if (exito) {
+                indiceBloque = idx;
+                procesarSiguienteBloque();
+            }
+        }, charIndex);
+    }
+
+    function detener() {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        if (timeoutSig) clearTimeout(timeoutSig);
+        detenerSincronizacion();
+        if (speechSynthesis) speechSynthesis.cancel();
+        leyendo = false;
+        utterance = null;
+        bloques = [];
+        indiceBloque = -1;
+        releaseWakeLock();
+    }
+
+    function limpiarSeleccion() {
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed) {
+            sel.removeAllRanges();
+        }
+    }
+
+    // ========== BOTÓN FLOTANTE ==========
+    function crearBotonAltavoz() {
+        if (speakerBtn) return;
+        speakerBtn = document.createElement('div');
+        speakerBtn.id = 'tts-speaker-btn';
+        speakerBtn.style.cssText = `
+            position: fixed; bottom: 24px; right: 24px;
+            width: 56px; height: 56px; border-radius: 50%;
+            background: #333; color: #fff; font-size: 28px;
+            display: none; align-items: center; justify-content: center;
+            z-index: 9999999; cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: transform 0.2s, background 0.2s;
+            user-select: none;
+        `;
+        speakerBtn.innerHTML = '🔊';
+        speakerBtn.addEventListener('click', () => {
+            if (selectionData) {
+                iniciarDesdeSeleccion(selectionData.parrafo, selectionData.charIndex);
+                selectionData = null;
+            }
+        });
+        speakerBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+        speakerBtn.addEventListener('touchstart', (e) => e.stopPropagation());
+        document.body.appendChild(speakerBtn);
+    }
+
+    function mostrarBotonAltavoz() {
+        if (!speakerBtn) crearBotonAltavoz();
+        speakerBtn.style.display = 'flex';
+    }
+    function ocultarBotonAltavoz() {
+        if (speakerBtn) speakerBtn.style.display = 'none';
+        selectionData = null;
+    }
+
+    // ========== DETECCIÓN DE SELECCIÓN ==========
+    function manejarSeleccion() {
+        if (leyendo) { ocultarBotonAltavoz(); return; }
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) { ocultarBotonAltavoz(); return; }
+        const range = selection.getRangeAt(0);
+        const startNode = range.startContainer;
+        const parrafo = startNode.parentElement?.closest(SELECTORES_TEXTO);
+        if (!parrafo || !document.querySelector(CONTENEDOR)?.contains(parrafo)) { ocultarBotonAltavoz(); return; }
+        const startOffset = range.startOffset;
+        const nodo = startNode.nodeType === Node.TEXT_NODE ? startNode : null;
+        if (!nodo) { ocultarBotonAltavoz(); return; }
+        const walker = document.createTreeWalker(parrafo, NodeFilter.SHOW_TEXT, null, false);
+        let charIndex = 0;
+        let found = false;
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            if (node === nodo) { charIndex += startOffset; found = true; break; }
+            charIndex += node.textContent.length;
+        }
+        if (!found) { ocultarBotonAltavoz(); return; }
+        selectionData = { parrafo, charIndex };
+        mostrarBotonAltavoz();
+    }
+
+    document.addEventListener('mouseup', () => setTimeout(manejarSeleccion, 20));
+    document.addEventListener('touchend', () => setTimeout(manejarSeleccion, 20));
+    document.addEventListener('mousedown', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
+    document.addEventListener('touchstart', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
+
+    // ========== GESTOS TÁCTILES Y RATÓN ==========
+    const contenedor = document.querySelector(CONTENEDOR);
+    if (contenedor) {
+        contenedor.addEventListener('dblclick', function(e) {
+            ocultarBotonAltavoz();
+            limpiarSeleccion();
+            const parrafo = e.target.closest(SELECTORES_TEXTO);
+            if (parrafo) {
+                e.preventDefault();
+                e.stopPropagation();
+                iniciar(parrafo);
+            }
+        }, { capture: true });
+
+        contenedor.addEventListener('touchend', function(e) {
+            const touch = e.changedTouches[0];
+            const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (!elem || !elem.closest(CONTENEDOR)) return;
+
+            const ahora = Date.now();
+            const diff = ahora - ultimoToque;
+
+            if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
+                if (toqueTimer) clearTimeout(toqueTimer);
+                ocultarBotonAltavoz(); limpiarSeleccion();
+                const parrafo = elem.closest(SELECTORES_TEXTO);
+                if (parrafo) {
+                    e.preventDefault(); e.stopPropagation(); iniciar(parrafo);
+                }
+                ultimoToque = 0;
+            } else {
+                ultimoToque = ahora;
+                if (toqueTimer) clearTimeout(toqueTimer);
+                toqueTimer = setTimeout(() => { if (leyendo) detener(); toqueTimer = null; }, DOBLE_TOQUE_MAX);
+            }
+        }, { capture: true, passive: false });
+    }
+
+    // ========== INICIALIZACIÓN ==========
+    // La ID removal está desactivada para preservar los enlaces internos del lector.
+    scrollContainer = obtenerScrollContainer();
 })();
 </script>
 </body>
