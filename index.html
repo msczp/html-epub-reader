@@ -344,7 +344,7 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS (sin auto‑scroll) ========== -->
+<!-- ========== TTS (sin auto‑scroll, corregido: no se para al hacer scroll) ========== -->
 <script>
 (function() {
     'use strict';
@@ -380,6 +380,9 @@
 
     let speakerBtn = null;
     let selectionData = null;
+
+    // Control de deslizamiento
+    let didMove = false;
 
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
@@ -658,8 +661,21 @@
 
     const contenedor = document.querySelector(CONTENEDOR);
     if (contenedor) {
+        // Reiniciar bandera de movimiento en cada nuevo toque
+        contenedor.addEventListener('touchstart', function(e) {
+            didMove = false;
+        }, { passive: true });
+
+        // Si se mueve, marcar que no es un tap
+        contenedor.addEventListener('touchmove', function(e) {
+            didMove = true;
+        }, { passive: true });
+
         contenedor.addEventListener('touchend', function(e) {
-            if (e.touches.length !== 0) return;
+            if (e.touches.length !== 0) return; // ignorar si quedan dedos en pantalla
+            // Si hubo movimiento, no hacemos nada (ni iniciar ni parar)
+            if (didMove) return;
+
             const touch = e.changedTouches[0];
             const elem = document.elementFromPoint(touch.clientX, touch.clientY);
             if (!elem || !elem.closest(CONTENEDOR)) return;
@@ -668,6 +684,7 @@
             const diff = ahora - ultimoToque;
 
             if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
+                // Doble toque -> iniciar lectura en el párrafo
                 if (toqueTimer) clearTimeout(toqueTimer);
                 ocultarBotonAltavoz(); limpiarSeleccion();
                 const parrafo = elem.closest(SELECTORES_TEXTO);
@@ -676,9 +693,13 @@
                 }
                 ultimoToque = 0;
             } else {
+                // Toque simple -> programar parada de lectura
                 ultimoToque = ahora;
                 if (toqueTimer) clearTimeout(toqueTimer);
-                toqueTimer = setTimeout(() => { if (leyendo) detener(); toqueTimer = null; }, DOBLE_TOQUE_MAX);
+                toqueTimer = setTimeout(() => {
+                    if (leyendo) detener();
+                    toqueTimer = null;
+                }, DOBLE_TOQUE_MAX);
             }
         }, { capture: true, passive: false });
 
@@ -716,7 +737,7 @@
 
     const FRONT_MATTER_TITLES = ['Cubierta', 'Cállate', 'Portadilla', 'Cita', 'Sinopsis'];
 
-    // ---------- IndexedDB helpers (sin cambios) ----------
+    // ---------- IndexedDB helpers ----------
     function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
     function dbAddBook(d) { return new Promise((res, rej) => { const tx = db.transaction('books','readwrite'); tx.objectStore('books').put(d); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
     function dbGetBook(id) { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').get(id); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
