@@ -316,6 +316,7 @@
             <button class="opt-btn" id="btn-bookmarks" title="Marcadores">⚐</button>
             <button class="opt-btn" id="btn-chapters" title="Capítulos">☰</button>
             <button class="opt-btn" id="btn-font-size" title="Tamaño de letra">Aa</button>
+            <button class="opt-btn" id="btn-tts-speed" title="Velocidad de lectura">2x</button>
             <button class="opt-btn" id="btn-fullscreen" title="Pantalla completa">⛶</button>
             <button class="opt-btn" id="btn-back-library" title="Volver a la biblioteca">⌘</button>
         </div>
@@ -343,7 +344,361 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== LECTOR PRINCIPAL (sin TTS ni auto‑scroll) ========== -->
+<!-- ========== TTS (sin auto‑scroll) ========== -->
+<script>
+(function() {
+    'use strict';
+
+    const CONTENEDOR = '#reader-container';
+    const SELECTORES_TEXTO = [
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'p', 'blockquote', 'li',
+        'div.title', 'div.chapter-title', 'div.carta', 'div.informe', 'div.fecha',
+        '[class*="heading"]', '[class*="title"]', '[class*="chapter"]',
+        'figcaption'
+    ].join(', ');
+    const SELECTORES_IMAGEN = 'img, figure, picture, svg, [class*="image"], [class*="img"], [class*="illustration"]';
+    const SELECTOR_SEPARADOR_TAG = 'hr';
+    const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
+
+    let velocidadTTS = 2.0;
+    const PAUSA_ENTRE_PARRAFOS = 150;
+    const DOBLE_TOQUE_MAX = 300;
+    const PAUSA_IMAGEN = 1000;
+    const PAUSA_SEPARADOR = 1200;
+    const LONGITUD_MINIMA_TEXTO = 1;
+
+    let leyendo = false;
+    let utterance = null;
+    let bloques = [];
+    let indiceBloque = -1;
+    let timeoutSig = null;
+    let ultimoToque = 0;
+    let toqueTimer = null;
+    let scrollContainer = null;
+    let wakeLock = null;
+
+    let speakerBtn = null;
+    let selectionData = null;
+
+    window.setVelocidadTTS = function(v) { velocidadTTS = v; };
+    window.getVelocidadTTS = function() { return velocidadTTS; };
+
+    document.addEventListener('contextmenu', function(e) {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) return;
+        const range = selection.getRangeAt(0);
+        const nodo = range.startContainer;
+        const parrafo = nodo.parentElement?.closest(SELECTORES_TEXTO);
+        if (parrafo && document.querySelector(CONTENEDOR)?.contains(parrafo)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, { capture: true, passive: false });
+
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+        ${CONTENEDOR} * {
+            -webkit-touch-callout: none !important;
+            -webkit-user-select: text !important;
+            user-select: text !important;
+        }
+    `;
+    document.head.appendChild(styleEl);
+
+    async function requestWakeLock() {
+        if ('wakeLock' in navigator) {
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                wakeLock.addEventListener('release', () => { wakeLock = null; });
+            } catch (err) {}
+        }
+    }
+    function releaseWakeLock() {
+        if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+    }
+
+    function obtenerScrollContainer() {
+        const contenedor = document.querySelector(CONTENEDOR);
+        if (!contenedor) return window;
+        return contenedor;
+    }
+
+    function obtenerBloques() {
+        const contenedor = document.querySelector(CONTENEDOR);
+        if (!contenedor) return [];
+        const elementos = contenedor.querySelectorAll(
+            `${SELECTORES_TEXTO}, ${SELECTORES_IMAGEN}, ${SELECTOR_SEPARADOR_TAG}`
+        );
+        const lista = [];
+        const textosVistos = new Set();
+        for (const el of elementos) {
+            if (el.offsetParent === null && getComputedStyle(el).display === 'none') continue;
+
+            if (el.tagName === 'HR') {
+                lista.push({ tipo: 'separador', elemento: el });
+                continue;
+            }
+            if (el.matches(SELECTORES_IMAGEN)) {
+                lista.push({ tipo: 'imagen', elemento: el });
+                continue;
+            }
+
+            let texto = el.textContent.trim();
+            if (SEPARADOR_TEXTO.test(texto)) {
+                lista.push({ tipo: 'separador', elemento: el });
+                continue;
+            }
+            if (texto.length < LONGITUD_MINIMA_TEXTO) continue;
+            const key = el.tagName + '|' + texto;
+            if (textosVistos.has(key)) continue;
+            textosVistos.add(key);
+
+            lista.push({ tipo: 'texto', elemento: el, texto });
+        }
+        return lista;
+    }
+
+    function leerBloque(indice, callback, innerStartOffset = 0) {
+        if (!leyendo) return callback(false);
+        const bloque = bloques[indice];
+        if (!bloque) return callback(false);
+
+        if (bloque.tipo === 'separador') {
+            setTimeout(() => callback(true), PAUSA_SEPARADOR);
+            return;
+        }
+        if (bloque.tipo === 'imagen') {
+            callback(true);
+            return;
+        }
+
+        const fullText = bloque.texto.replace(/\//g, ', ');
+        const textoParaLeer = fullText.substring(innerStartOffset);
+
+        const u = new SpeechSynthesisUtterance(textoParaLeer);
+        u.lang = 'es-ES';
+        u.rate = velocidadTTS;
+        u.pitch = 1.0;
+
+        u.onend = () => {
+            utterance = null;
+            callback(true);
+        };
+        u.onerror = () => {
+            utterance = null;
+            callback(false);
+        };
+
+        utterance = u;
+        speechSynthesis.speak(u);
+    }
+
+    function procesarSiguienteBloque() {
+        if (timeoutSig) clearTimeout(timeoutSig);
+        if (!leyendo) return;
+
+        indiceBloque++;
+        if (indiceBloque >= bloques.length) {
+            detener();
+            return;
+        }
+
+        const bloque = bloques[indiceBloque];
+
+        let pausaPrevia = PAUSA_ENTRE_PARRAFOS;
+        if (bloque.tipo === 'imagen') pausaPrevia = PAUSA_IMAGEN;
+        else if (bloque.tipo === 'separador') pausaPrevia = 0;
+
+        timeoutSig = setTimeout(() => {
+            timeoutSig = null;
+            if (!leyendo) return;
+            if (bloque.tipo === 'imagen' || bloque.tipo === 'separador') {
+                procesarSiguienteBloque();
+            } else {
+                leerBloque(indiceBloque, (exito) => {
+                    if (exito) procesarSiguienteBloque();
+                });
+            }
+        }, pausaPrevia + 100);
+    }
+
+    function iniciar(parrafo) {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        detener();
+        const todos = obtenerBloques();
+        if (todos.length === 0) return;
+
+        let idx = todos.findIndex(b => b.elemento === parrafo);
+        if (idx === -1) {
+            const txt = parrafo.textContent.trim();
+            idx = todos.findIndex(b => b.tipo === 'texto' && b.elemento.textContent.trim() === txt);
+        }
+        if (idx === -1) return;
+
+        bloques = todos;
+        indiceBloque = idx - 1;
+        leyendo = true;
+        requestWakeLock();
+        scrollContainer = obtenerScrollContainer();
+        procesarSiguienteBloque();
+    }
+
+    function iniciarDesdeSeleccion(parrafo, charIndex) {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        detener();
+        const todos = obtenerBloques();
+        if (todos.length === 0) return;
+
+        let idx = todos.findIndex(b => b.elemento === parrafo);
+        if (idx === -1) {
+            const txt = parrafo.textContent.trim();
+            idx = todos.findIndex(b => b.tipo === 'texto' && b.elemento.textContent.trim() === txt);
+        }
+        if (idx === -1) return;
+
+        bloques = todos;
+        indiceBloque = idx;
+        leyendo = true;
+        requestWakeLock();
+        scrollContainer = obtenerScrollContainer();
+
+        leerBloque(idx, (exito) => {
+            if (exito) {
+                indiceBloque = idx;
+                procesarSiguienteBloque();
+            }
+        }, charIndex);
+    }
+
+    function detener() {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        if (timeoutSig) clearTimeout(timeoutSig);
+        if (speechSynthesis) speechSynthesis.cancel();
+        leyendo = false;
+        utterance = null;
+        bloques = [];
+        indiceBloque = -1;
+        releaseWakeLock();
+    }
+
+    function limpiarSeleccion() {
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed) {
+            sel.removeAllRanges();
+        }
+    }
+
+    function crearBotonAltavoz() {
+        if (speakerBtn) return;
+        speakerBtn = document.createElement('div');
+        speakerBtn.id = 'tts-speaker-btn';
+        speakerBtn.style.cssText = `
+            position: fixed; bottom: 24px; right: 24px;
+            width: 56px; height: 56px; border-radius: 50%;
+            background: #333; color: #fff; font-size: 28px;
+            display: none; align-items: center; justify-content: center;
+            z-index: 9999999; cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: transform 0.2s, background 0.2s;
+            user-select: none;
+        `;
+        speakerBtn.innerHTML = '🔊';
+        speakerBtn.addEventListener('click', () => {
+            if (selectionData) {
+                iniciarDesdeSeleccion(selectionData.parrafo, selectionData.charIndex);
+                selectionData = null;
+            }
+        });
+        speakerBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+        speakerBtn.addEventListener('touchstart', (e) => e.stopPropagation());
+        document.body.appendChild(speakerBtn);
+    }
+
+    function mostrarBotonAltavoz() {
+        if (!speakerBtn) crearBotonAltavoz();
+        speakerBtn.style.display = 'flex';
+    }
+    function ocultarBotonAltavoz() {
+        if (speakerBtn) speakerBtn.style.display = 'none';
+        selectionData = null;
+    }
+
+    function manejarSeleccion() {
+        if (leyendo) { ocultarBotonAltavoz(); return; }
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) { ocultarBotonAltavoz(); return; }
+        const range = selection.getRangeAt(0);
+        const startNode = range.startContainer;
+        const parrafo = startNode.parentElement?.closest(SELECTORES_TEXTO);
+        if (!parrafo || !document.querySelector(CONTENEDOR)?.contains(parrafo)) { ocultarBotonAltavoz(); return; }
+        const startOffset = range.startOffset;
+        const nodo = startNode.nodeType === Node.TEXT_NODE ? startNode : null;
+        if (!nodo) { ocultarBotonAltavoz(); return; }
+        const walker = document.createTreeWalker(parrafo, NodeFilter.SHOW_TEXT, null, false);
+        let charIndex = 0;
+        let found = false;
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            if (node === nodo) { charIndex += startOffset; found = true; break; }
+            charIndex += node.textContent.length;
+        }
+        if (!found) { ocultarBotonAltavoz(); return; }
+        selectionData = { parrafo, charIndex };
+        mostrarBotonAltavoz();
+    }
+
+    document.addEventListener('mouseup', () => setTimeout(manejarSeleccion, 20));
+    document.addEventListener('touchend', () => setTimeout(manejarSeleccion, 20));
+    document.addEventListener('mousedown', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
+    document.addEventListener('touchstart', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
+
+    const contenedor = document.querySelector(CONTENEDOR);
+    if (contenedor) {
+        contenedor.addEventListener('touchend', function(e) {
+            if (e.touches.length !== 0) return;
+            const touch = e.changedTouches[0];
+            const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (!elem || !elem.closest(CONTENEDOR)) return;
+
+            const ahora = Date.now();
+            const diff = ahora - ultimoToque;
+
+            if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
+                if (toqueTimer) clearTimeout(toqueTimer);
+                ocultarBotonAltavoz(); limpiarSeleccion();
+                const parrafo = elem.closest(SELECTORES_TEXTO);
+                if (parrafo) {
+                    e.preventDefault(); e.stopPropagation(); iniciar(parrafo);
+                }
+                ultimoToque = 0;
+            } else {
+                ultimoToque = ahora;
+                if (toqueTimer) clearTimeout(toqueTimer);
+                toqueTimer = setTimeout(() => { if (leyendo) detener(); toqueTimer = null; }, DOBLE_TOQUE_MAX);
+            }
+        }, { capture: true, passive: false });
+
+        contenedor.addEventListener('dblclick', function(e) {
+            ocultarBotonAltavoz();
+            limpiarSeleccion();
+            const parrafo = e.target.closest(SELECTORES_TEXTO);
+            if (parrafo) {
+                e.preventDefault();
+                e.stopPropagation();
+                iniciar(parrafo);
+            }
+        }, { capture: true });
+    }
+
+    scrollContainer = obtenerScrollContainer();
+})();
+</script>
+
+<!-- ========== LECTOR PRINCIPAL (sin cambios) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
@@ -361,7 +716,7 @@
 
     const FRONT_MATTER_TITLES = ['Cubierta', 'Cállate', 'Portadilla', 'Cita', 'Sinopsis'];
 
-    // ---------- IndexedDB helpers ----------
+    // ---------- IndexedDB helpers (sin cambios) ----------
     function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
     function dbAddBook(d) { return new Promise((res, rej) => { const tx = db.transaction('books','readwrite'); tx.objectStore('books').put(d); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
     function dbGetBook(id) { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').get(id); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
@@ -678,24 +1033,46 @@
     let optionsVisible = false, globalCharMapping = null, headerClickHandler = null;
 
     const FONT_SIZES = [0.9, 1.05, 1.2, 1.4, 1.6];
+    const SPEED_VALUES = [0.75, 1.0, 1.5, 2.0];
     let currentFontSizeIndex = 1;
+    let currentSpeedIndex = 3;
 
     try {
         const savedFont = localStorage.getItem('reader_font_size_index');
         if (savedFont !== null) currentFontSizeIndex = parseInt(savedFont);
+        const savedSpeed = localStorage.getItem('reader_tts_speed_index');
+        if (savedSpeed !== null) currentSpeedIndex = parseInt(savedSpeed);
     } catch(e) {}
 
     function applyFontSizeToDocument() {
         document.documentElement.style.fontSize = (FONT_SIZES[currentFontSizeIndex] * 100) + '%';
     }
+
+    function updateSpeedButton() {
+        const $btnTTSSpeed = document.getElementById('btn-tts-speed');
+        if ($btnTTSSpeed) $btnTTSSpeed.textContent = SPEED_VALUES[currentSpeedIndex] + 'x';
+    }
+
+    if (window.setVelocidadTTS) {
+        window.setVelocidadTTS(SPEED_VALUES[currentSpeedIndex]);
+    }
     applyFontSizeToDocument();
 
     const $btnFontSize = document.getElementById('btn-font-size');
+    const $btnTTSSpeed = document.getElementById('btn-tts-speed');
     if ($btnFontSize) {
         $btnFontSize.addEventListener('click', () => {
             currentFontSizeIndex = (currentFontSizeIndex + 1) % FONT_SIZES.length;
             applyFontSizeToDocument();
             try { localStorage.setItem('reader_font_size_index', currentFontSizeIndex); } catch(e) {}
+        });
+    }
+    if ($btnTTSSpeed) {
+        $btnTTSSpeed.addEventListener('click', () => {
+            currentSpeedIndex = (currentSpeedIndex + 1) % SPEED_VALUES.length;
+            updateSpeedButton();
+            if (window.setVelocidadTTS) window.setVelocidadTTS(SPEED_VALUES[currentSpeedIndex]);
+            try { localStorage.setItem('reader_tts_speed_index', currentSpeedIndex); } catch(e) {}
         });
     }
 
@@ -732,6 +1109,7 @@
             fullHTML += '</div>'; $readerContainer.innerHTML = fullHTML;
 
             applyFontSizeToDocument();
+            updateSpeedButton();
 
             const bookContent = $readerContainer.querySelector('.book-content');
             if (bookContent) {
@@ -1010,7 +1388,7 @@
     document.addEventListener('drop', async e => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file && file.name.endsWith('.epub')) { const book = await uploadAndProcessBook(file); if (book) renderLibrary(); } });
     window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage > 0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } });
 
-    (async () => { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader v91 listo'); })();
+    (async () => { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader v91 + TTS listo'); })();
 })();
 </script>
 </body>
