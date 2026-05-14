@@ -222,15 +222,12 @@
         #reader-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; padding: 16px 18px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font-family: 'Georgia', 'Palatino Linotype', serif; color: #1f1f1f; width: 100%; margin: 0 auto; word-wrap: break-word; overflow-x: hidden; background: var(--reader-bg); scrollbar-width: none; -ms-overflow-style: none; }
         #reader-container::-webkit-scrollbar { display: none; }
         .book-content { font-size: 1.05rem; line-height: 1.7 !important; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%; overflow-x: hidden; font-weight: normal; }
-
-        /* ===== NUEVO: eliminar guiones al partir palabras ===== */
         .book-content, .book-content * {
             hyphens: none !important;
             -webkit-hyphens: none !important;
             word-break: normal;
             overflow-wrap: break-word;
         }
-
         .book-content h1, .book-content h2, .book-content h3, .book-content h4 { font-weight: 700 !important; text-align: center; margin: 2.5em 0 1.5em 0; }
         .book-content p { margin-bottom: 0.7em !important; font-size: 1.15rem !important; line-height: inherit !important; text-indent: 35px !important; text-align: justify !important; }
         .book-content img { max-width: 100% !important; height: auto !important; border-radius: 6px; margin: 1.5em auto; display: block; background-color: var(--reader-bg); mix-blend-mode: multiply; }
@@ -334,7 +331,6 @@
     <div id="bookmarks-overlay" class="bookmarks-overlay"><div class="bookmarks-modal" id="bookmarks-modal"><h3>Marcadores</h3><button class="add-bookmark-btn" id="btn-add-bookmark">+ Añadir marcador</button><div class="bookmark-form" id="bookmark-form" style="display:none;"><div class="note-wrapper"><textarea id="bookmark-note" class="note-input" placeholder="Nota (opcional)..." rows="1"></textarea><button class="note-clear-btn" id="clear-note-btn" title="Borrar nota">✕</button></div><div class="bookmark-form-buttons"><button id="btn-cancel-bookmark">Cancelar</button><button class="primary" id="btn-save-bookmark">Guardar</button></div></div><div id="bookmarks-list"></div></div></div>
 </div>
 
-<!-- Overlay de comentario (global) -->
 <div id="comment-edit-overlay" class="comment-edit-overlay">
     <div class="comment-edit-modal">
         <h3>Comentario</h3>
@@ -348,7 +344,7 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS Script (scroll más suave) ========== -->
+<!-- ========== TTS + AUTO‑SCROLL CONTINUO ========== -->
 <script>
 (function() {
     'use strict';
@@ -368,16 +364,30 @@
     let velocidadTTS = 2.0;
     const PAUSA_ENTRE_PARRAFOS = 150;
     const DOBLE_TOQUE_MAX = 300;
-    const SCROLL_PORCENTAJE = 0.42;
-    const SCROLL_TOLERANCIA = 5;
     const PAUSA_IMAGEN = 1000;
     const PAUSA_SEPARADOR = 1200;
     const LONGITUD_MINIMA_TEXTO = 1;
     const BASE_CHARS_PER_SEC = 12.5;
     const CORRECCION_VELOCIDAD = 1.0;
 
-    const FALLBACK_DELAY = 400;
-    const SCROLL_ANIMATION_MS = 800;   // ← más suave (antes 500)
+    // Auto‑scroll
+    const SCROLL_AUTO_DEFAULT_SPEED = 40;   // píxeles por segundo
+    const SCROLL_SPEED_STEP = 5;
+    const SCROLL_SPEED_MIN = 10;
+    const SCROLL_SPEED_MAX = 120;
+    const MANUAL_SCROLL_RESUME_DELAY = 200; // ms tras soltar un dedo
+
+    let autoScrollSpeed = SCROLL_AUTO_DEFAULT_SPEED;
+    let autoScrollActive = false;
+    let autoScrollRAF = null;
+    let autoScrollLastTime = 0;
+    let manualScrolling = false;
+    let resumeTimer = null;
+
+    // Gestos táctiles
+    let twoFingerActive = false;
+    let twoFingerStartY = 0;
+    let isSingleTouch = false;   // para ignorar doble‑toque con más de un dedo
 
     let leyendo = false;
     let utterance = null;
@@ -389,24 +399,13 @@
     let scrollContainer = null;
     let wakeLock = null;
 
-    let currentElem = null;
-    let fullText = '';
-    let startOffsetGlobal = 0;
-
-    let onboundaryActive = false;
-    let fallbackTimer = null;
-    let lastBoundaryTime = 0;
-    let isAnimating = false;
-    let animFrameId = null;
-    let bloqueStartTime = 0;
-    let bloqueTotalDuration = 0;
-
     let speakerBtn = null;
     let selectionData = null;
 
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
 
+    // ========== SUPRESIÓN DEL MENÚ CONTEXTUAL ==========
     document.addEventListener('contextmenu', function(e) {
         const selection = window.getSelection();
         if (!selection || selection.isCollapsed) return;
@@ -429,6 +428,7 @@
     `;
     document.head.appendChild(styleEl);
 
+    // ========== WAKE LOCK ==========
     async function requestWakeLock() {
         if ('wakeLock' in navigator) {
             try {
@@ -441,6 +441,7 @@
         if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     }
 
+    // ========== SCROLL UTILITIES ==========
     function obtenerScrollContainer() {
         const contenedor = document.querySelector(CONTENEDOR);
         if (!contenedor) return window;
@@ -463,75 +464,53 @@
         }
     }
 
-    function animateScrollTo(targetScroll, duration) {
-        if (isAnimating) {
-            cancelAnimationFrame(animFrameId);
-            isAnimating = false;
-        }
-        const start = getScrollTop();
-        const change = targetScroll - start;
-        if (Math.abs(change) < 0.5) return;
-
-        const startTime = performance.now();
-        isAnimating = true;
-
+    // ========== AUTO‑SCROLL ==========
+    function startAutoScroll() {
+        if (!autoScrollActive || manualScrolling) return;
+        stopAutoScroll(); // por seguridad
+        autoScrollLastTime = performance.now();
         function step(now) {
-            const elapsed = now - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-            setScrollTop(start + change * ease);
-
-            if (progress < 1) {
-                animFrameId = requestAnimationFrame(step);
-            } else {
-                isAnimating = false;
-                animFrameId = null;
+            if (!autoScrollActive || manualScrolling) {
+                autoScrollRAF = null;
+                return;
             }
+            const elapsed = (now - autoScrollLastTime) / 1000; // segundos
+            autoScrollLastTime = now;
+            const current = getScrollTop();
+            const maxScroll = scrollContainer === window
+                ? document.documentElement.scrollHeight - window.innerHeight
+                : scrollContainer.scrollHeight - scrollContainer.clientHeight;
+            const newTop = Math.min(current + autoScrollSpeed * elapsed, maxScroll);
+            setScrollTop(newTop);
+            autoScrollRAF = requestAnimationFrame(step);
         }
-        animFrameId = requestAnimationFrame(step);
+        autoScrollRAF = requestAnimationFrame(step);
     }
 
-    function ajustarScrollAPalabra(globalChar) {
-        if (!currentElem) return;
-        const charPos = getCharPosition(currentElem, globalChar);
-        if (!charPos) return;
-
-        const container = document.querySelector(CONTENEDOR);
-        if (!container) return;
-        const cs = getComputedStyle(container);
-        const pTop = parseFloat(cs.paddingTop) || 0;
-        const contHeight = container.clientHeight;
-        const contRect = container.getBoundingClientRect();
-        const contentHeight = contHeight - pTop;
-        const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
-
-        const delta = charPos.top - desiredTop;
-        if (Math.abs(delta) <= SCROLL_TOLERANCIA) return;
-
-        const targetScroll = getScrollTop() + delta;
-        animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
-    }
-
-    function getCharPosition(elem, charIndex) {
-        const walker = document.createTreeWalker(elem, NodeFilter.SHOW_TEXT, null, false);
-        let current = 0;
-        while (walker.nextNode()) {
-            const node = walker.currentNode;
-            const length = node.textContent.length;
-            if (current + length > charIndex) {
-                const offset = charIndex - current;
-                const range = document.createRange();
-                range.setStart(node, offset);
-                range.setEnd(node, Math.min(offset + 1, length));
-                const rect = range.getClientRects()[0];
-                if (rect) return { top: rect.top, left: rect.left };
-                return null;
-            }
-            current += length;
+    function stopAutoScroll() {
+        if (autoScrollRAF) {
+            cancelAnimationFrame(autoScrollRAF);
+            autoScrollRAF = null;
         }
-        return null;
+        clearTimeout(resumeTimer);
+        resumeTimer = null;
     }
 
+    function pauseAutoScrollForManual() {
+        manualScrolling = true;
+        stopAutoScroll();
+    }
+
+    function resumeAutoScrollIfNeeded() {
+        if (!leyendo) return;
+        clearTimeout(resumeTimer);
+        resumeTimer = setTimeout(() => {
+            manualScrolling = false;
+            if (autoScrollActive) startAutoScroll();
+        }, MANUAL_SCROLL_RESUME_DELAY);
+    }
+
+    // ========== GESTIÓN DE BLOQUES ==========
     function obtenerBloques() {
         const contenedor = document.querySelector(CONTENEDOR);
         if (!contenedor) return [];
@@ -573,84 +552,33 @@
         if (!bloque) return callback(false);
 
         if (bloque.tipo === 'separador') {
-            detenerSincronizacion();
             setTimeout(() => callback(true), PAUSA_SEPARADOR);
             return;
         }
         if (bloque.tipo === 'imagen') {
-            detenerSincronizacion();
             callback(true);
             return;
         }
 
-        currentElem = bloque.elemento;
-        fullText = bloque.texto.replace(/\//g, ', ');
-        startOffsetGlobal = innerStartOffset;
-        const textoParaLeer = fullText.substring(startOffsetGlobal);
-
-        const charsPerSec = BASE_CHARS_PER_SEC * velocidadTTS * CORRECCION_VELOCIDAD;
-        bloqueTotalDuration = (textoParaLeer.length / charsPerSec) * 1000;
-        bloqueStartTime = performance.now();
-
-        onboundaryActive = false;
-        lastBoundaryTime = 0;
-        clearTimeout(fallbackTimer);
-        fallbackTimer = null;
+        const fullText = bloque.texto.replace(/\//g, ', ');
+        const textoParaLeer = fullText.substring(innerStartOffset);
 
         const u = new SpeechSynthesisUtterance(textoParaLeer);
         u.lang = 'es-ES';
         u.rate = velocidadTTS;
         u.pitch = 1.0;
 
-        u.onboundary = function(event) {
-            if (!leyendo || !currentElem) return;
-            onboundaryActive = true;
-            lastBoundaryTime = performance.now();
-            if (event.name === 'word' || event.name === 'sentence') {
-                const globalChar = event.charIndex + startOffsetGlobal;
-                ajustarScrollAPalabra(globalChar);
-            }
-        };
-
-        function startFallback() {
-            if (fallbackTimer) clearTimeout(fallbackTimer);
-            fallbackTimer = setTimeout(() => {
-                if (!leyendo || !currentElem) return;
-                const ahora = performance.now();
-                if (!onboundaryActive || (ahora - lastBoundaryTime > 700)) {
-                    const elapsed = ahora - bloqueStartTime;
-                    const progress = Math.min(elapsed / bloqueTotalDuration, 1);
-                    const estimatedGlobalChar = Math.floor(progress * (fullText.length - startOffsetGlobal)) + startOffsetGlobal;
-                    ajustarScrollAPalabra(estimatedGlobalChar);
-                }
-                if (leyendo) {
-                    fallbackTimer = setTimeout(startFallback, FALLBACK_DELAY);
-                }
-            }, FALLBACK_DELAY);
-        }
-        startFallback();
-
         u.onend = () => {
-            detenerSincronizacion();
             utterance = null;
             callback(true);
         };
         u.onerror = () => {
-            detenerSincronizacion();
             utterance = null;
             callback(false);
         };
 
         utterance = u;
         speechSynthesis.speak(u);
-    }
-
-    function detenerSincronizacion() {
-        clearTimeout(fallbackTimer);
-        if (animFrameId) cancelAnimationFrame(animFrameId);
-        isAnimating = false;
-        animFrameId = null;
-        currentElem = null;
     }
 
     function procesarSiguienteBloque() {
@@ -664,23 +592,6 @@
         }
 
         const bloque = bloques[indiceBloque];
-        if (bloque.elemento) {
-            const firstChar = getCharPosition(bloque.elemento, 0);
-            if (firstChar) {
-                const container = document.querySelector(CONTENEDOR);
-                const cs = getComputedStyle(container);
-                const pTop = parseFloat(cs.paddingTop) || 0;
-                const contHeight = container.clientHeight;
-                const contRect = container.getBoundingClientRect();
-                const contentHeight = contHeight - pTop;
-                const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
-                const delta = firstChar.top - desiredTop;
-                const targetScroll = getScrollTop() + delta;
-                animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
-            } else {
-                scrollElementoAlPorcentaje(bloque.elemento, SCROLL_PORCENTAJE);
-            }
-        }
 
         let pausaPrevia = PAUSA_ENTRE_PARRAFOS;
         if (bloque.tipo === 'imagen') pausaPrevia = PAUSA_IMAGEN;
@@ -699,41 +610,7 @@
         }, pausaPrevia + 100);
     }
 
-    function scrollElementoAlPorcentaje(elem, porcentaje) {
-        if (!elem) return;
-        const container = document.querySelector(CONTENEDOR);
-        if (!container) return;
-        const cs = getComputedStyle(container);
-        const pTop = parseFloat(cs.paddingTop) || 0;
-        const contHeight = container.clientHeight;
-        const contRect = container.getBoundingClientRect();
-        const contentHeight = contHeight - pTop;
-        const desiredTop = contRect.top + pTop + contentHeight * porcentaje;
-
-        const textNode = elem.firstChild;
-        let firstCharTop;
-        if (textNode && textNode.nodeType === Node.TEXT_NODE && textNode.length > 0) {
-            const range = document.createRange();
-            range.setStart(textNode, 0);
-            range.setEnd(textNode, 1);
-            const rect = range.getClientRects()[0];
-            firstCharTop = rect ? rect.top : elem.getBoundingClientRect().top;
-        } else {
-            firstCharTop = elem.getBoundingClientRect().top;
-        }
-
-        const currentScroll = getScrollTop();
-        let targetScroll;
-        if (scrollContainer === window) {
-            targetScroll = currentScroll + firstCharTop - desiredTop;
-        } else {
-            const contRect2 = container.getBoundingClientRect();
-            const relativeTop = firstCharTop - contRect2.top;
-            targetScroll = currentScroll + relativeTop - (desiredTop - contRect2.top);
-        }
-        animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
-    }
-
+    // ========== INICIAR / DETENER ==========
     function iniciar(parrafo) {
         ocultarBotonAltavoz();
         limpiarSeleccion();
@@ -753,7 +630,12 @@
         leyendo = true;
         requestWakeLock();
         scrollContainer = obtenerScrollContainer();
-        scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
+
+        // Activar auto‑scroll
+        autoScrollActive = true;
+        manualScrolling = false;
+        startAutoScroll();
+
         procesarSiguienteBloque();
     }
 
@@ -777,21 +659,9 @@
         requestWakeLock();
         scrollContainer = obtenerScrollContainer();
 
-        const pos = getCharPosition(parrafo, charIndex);
-        if (pos) {
-            const container = document.querySelector(CONTENEDOR);
-            const cs = getComputedStyle(container);
-            const pTop = parseFloat(cs.paddingTop) || 0;
-            const contHeight = container.clientHeight;
-            const contRect = container.getBoundingClientRect();
-            const contentHeight = contHeight - pTop;
-            const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
-            const delta = pos.top - desiredTop;
-            const targetScroll = getScrollTop() + delta;
-            animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
-        } else {
-            scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
-        }
+        autoScrollActive = true;
+        manualScrolling = false;
+        startAutoScroll();
 
         leerBloque(idx, (exito) => {
             if (exito) {
@@ -805,13 +675,17 @@
         ocultarBotonAltavoz();
         limpiarSeleccion();
         if (timeoutSig) clearTimeout(timeoutSig);
-        detenerSincronizacion();
         if (speechSynthesis) speechSynthesis.cancel();
         leyendo = false;
         utterance = null;
         bloques = [];
         indiceBloque = -1;
         releaseWakeLock();
+
+        // Desactivar auto‑scroll
+        autoScrollActive = false;
+        stopAutoScroll();
+        manualScrolling = false;
     }
 
     function limpiarSeleccion() {
@@ -821,6 +695,7 @@
         }
     }
 
+    // ========== BOTÓN FLOTANTE ==========
     function crearBotonAltavoz() {
         if (speakerBtn) return;
         speakerBtn = document.createElement('div');
@@ -856,6 +731,7 @@
         selectionData = null;
     }
 
+    // ========== DETECCIÓN DE SELECCIÓN ==========
     function manejarSeleccion() {
         if (leyendo) { ocultarBotonAltavoz(); return; }
         const selection = window.getSelection();
@@ -885,20 +761,15 @@
     document.addEventListener('mousedown', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
     document.addEventListener('touchstart', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
 
+    // ========== GESTOS TÁCTILES Y RATÓN ==========
     const contenedor = document.querySelector(CONTENEDOR);
     if (contenedor) {
-        contenedor.addEventListener('dblclick', function(e) {
-            ocultarBotonAltavoz();
-            limpiarSeleccion();
-            const parrafo = e.target.closest(SELECTORES_TEXTO);
-            if (parrafo) {
-                e.preventDefault();
-                e.stopPropagation();
-                iniciar(parrafo);
-            }
-        }, { capture: true });
+        contenedor.addEventListener('touchstart', function(e) {
+            isSingleTouch = e.touches.length === 1;
+        }, { passive: true });
 
         contenedor.addEventListener('touchend', function(e) {
+            if (!isSingleTouch) return;
             const touch = e.changedTouches[0];
             const elem = document.elementFromPoint(touch.clientX, touch.clientY);
             if (!elem || !elem.closest(CONTENEDOR)) return;
@@ -920,13 +791,65 @@
                 toqueTimer = setTimeout(() => { if (leyendo) detener(); toqueTimer = null; }, DOBLE_TOQUE_MAX);
             }
         }, { capture: true, passive: false });
+
+        // Scroll manual con un dedo → pausa el auto‑scroll
+        contenedor.addEventListener('touchstart', function(e) {
+            if (e.touches.length === 1) {
+                pauseAutoScrollForManual();
+            } else if (e.touches.length === 2) {
+                twoFingerActive = true;
+                twoFingerStartY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        contenedor.addEventListener('touchmove', function(e) {
+            if (twoFingerActive && e.touches.length === 2) {
+                const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                const deltaY = currentY - twoFingerStartY;
+                const threshold = 25;
+                if (Math.abs(deltaY) >= threshold) {
+                    if (deltaY > 0) {
+                        // deslizar hacia abajo → reducir velocidad
+                        autoScrollSpeed = Math.max(SCROLL_SPEED_MIN, autoScrollSpeed - SCROLL_SPEED_STEP);
+                    } else {
+                        // deslizar hacia arriba → aumentar velocidad
+                        autoScrollSpeed = Math.min(SCROLL_SPEED_MAX, autoScrollSpeed + SCROLL_SPEED_STEP);
+                    }
+                    twoFingerStartY = currentY;
+                }
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        contenedor.addEventListener('touchend', function(e) {
+            if (e.touches.length === 0) {
+                if (twoFingerActive) {
+                    twoFingerActive = false;
+                }
+                if (manualScrolling) {
+                    resumeAutoScrollIfNeeded();
+                }
+            }
+        });
+
+        contenedor.addEventListener('dblclick', function(e) {
+            ocultarBotonAltavoz();
+            limpiarSeleccion();
+            const parrafo = e.target.closest(SELECTORES_TEXTO);
+            if (parrafo) {
+                e.preventDefault();
+                e.stopPropagation();
+                iniciar(parrafo);
+            }
+        }, { capture: true });
     }
 
     scrollContainer = obtenerScrollContainer();
 })();
 </script>
 
-<!-- ========== LECTOR PRINCIPAL ========== -->
+<!-- ========== LECTOR PRINCIPAL (completo, sin cambios) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
@@ -944,6 +867,7 @@
 
     const FRONT_MATTER_TITLES = ['Cubierta', 'Cállate', 'Portadilla', 'Cita', 'Sinopsis'];
 
+    // ---------- IndexedDB helpers ----------
     function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
     function dbAddBook(d) { return new Promise((res, rej) => { const tx = db.transaction('books','readwrite'); tx.objectStore('books').put(d); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
     function dbGetBook(id) { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').get(id); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
