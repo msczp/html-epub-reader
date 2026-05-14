@@ -286,7 +286,6 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .processing-card .msg { font-size: 0.95rem; color: #333; line-height: 1.4; padding: 0 4px; }
 
-        /* Toast para velocidad de auto‑scroll */
         #scroll-speed-toast {
             position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
             background: rgba(0,0,0,0.75); color: #fff; padding: 8px 18px; border-radius: 20px;
@@ -351,10 +350,9 @@
 </div>
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
-<!-- Toast para velocidad de auto‑scroll -->
 <div id="scroll-speed-toast"></div>
 
-<!-- ========== TTS + AUTO‑SCROLL CONTINUO ========== -->
+<!-- ========== TTS + AUTO‑SCROLL CONTINUO (mejorado) ========== -->
 <script>
 (function() {
     'use strict';
@@ -380,10 +378,10 @@
     const BASE_CHARS_PER_SEC = 12.5;
     const CORRECCION_VELOCIDAD = 1.0;
 
-    // Auto‑scroll
-    const SCROLL_AUTO_DEFAULT_SPEED = 20;   // píxeles por segundo (más lento)
-    const SCROLL_SPEED_STEP = 5;
-    const SCROLL_SPEED_MIN = 5;
+    // Auto‑scroll (paso más fino: 1 px/s, mínimo 1)
+    const SCROLL_AUTO_DEFAULT_SPEED = 20;
+    const SCROLL_SPEED_STEP = 1;
+    const SCROLL_SPEED_MIN = 1;
     const SCROLL_SPEED_MAX = 120;
     const MANUAL_SCROLL_RESUME_DELAY = 200;
 
@@ -397,6 +395,7 @@
     // Gestos táctiles
     let twoFingerActive = false;
     let twoFingerStartY = 0;
+    let didMove = false;          // para distinguir tap de scroll
     let isSingleTouch = false;
 
     let leyendo = false;
@@ -412,7 +411,6 @@
     let speakerBtn = null;
     let selectionData = null;
 
-    // Toast para velocidad
     const $toast = document.getElementById('scroll-speed-toast');
     let toastTimer = null;
 
@@ -421,9 +419,7 @@
             $toast.textContent = speed + ' px/s';
             $toast.style.opacity = '1';
             clearTimeout(toastTimer);
-            toastTimer = setTimeout(() => {
-                $toast.style.opacity = '0';
-            }, 1000);
+            toastTimer = setTimeout(() => { $toast.style.opacity = '0'; }, 1000);
         }
     }
 
@@ -787,50 +783,26 @@
     // ========== GESTOS TÁCTILES Y RATÓN ==========
     const contenedor = document.querySelector(CONTENEDOR);
     if (contenedor) {
+        // touchstart general: resetear didMove y guardar si es un solo dedo
         contenedor.addEventListener('touchstart', function(e) {
+            didMove = false;
             isSingleTouch = e.touches.length === 1;
-        }, { passive: true });
-
-        contenedor.addEventListener('touchend', function(e) {
-            if (!isSingleTouch) return;
-            const touch = e.changedTouches[0];
-            const elem = document.elementFromPoint(touch.clientX, touch.clientY);
-            if (!elem || !elem.closest(CONTENEDOR)) return;
-
-            const ahora = Date.now();
-            const diff = ahora - ultimoToque;
-
-            if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
-                if (toqueTimer) clearTimeout(toqueTimer);
-                ocultarBotonAltavoz(); limpiarSeleccion();
-                const parrafo = elem.closest(SELECTORES_TEXTO);
-                if (parrafo) {
-                    e.preventDefault(); e.stopPropagation(); iniciar(parrafo);
-                }
-                ultimoToque = 0;
-            } else {
-                ultimoToque = ahora;
-                if (toqueTimer) clearTimeout(toqueTimer);
-                toqueTimer = setTimeout(() => { if (leyendo) detener(); toqueTimer = null; }, DOBLE_TOQUE_MAX);
-            }
-        }, { capture: true, passive: false });
-
-        // Scroll manual con un dedo → pausa el auto‑scroll
-        contenedor.addEventListener('touchstart', function(e) {
             if (e.touches.length === 1) {
                 pauseAutoScrollForManual();
             } else if (e.touches.length === 2) {
                 twoFingerActive = true;
                 twoFingerStartY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                pauseAutoScrollForManual(); // pausar también durante ajuste de velocidad
                 e.preventDefault();
             }
         }, { passive: false });
 
         contenedor.addEventListener('touchmove', function(e) {
+            didMove = true; // hubo movimiento, no es un tap
             if (twoFingerActive && e.touches.length === 2) {
                 const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
                 const deltaY = currentY - twoFingerStartY;
-                const threshold = 20;
+                const threshold = 15;
                 if (Math.abs(deltaY) >= threshold) {
                     if (deltaY > 0) {
                         autoScrollSpeed = Math.max(SCROLL_SPEED_MIN, autoScrollSpeed - SCROLL_SPEED_STEP);
@@ -849,11 +821,37 @@
                 if (twoFingerActive) {
                     twoFingerActive = false;
                 }
+                // Si no hubo movimiento, procesar posible tap
+                if (!didMove && isSingleTouch) {
+                    const touch = e.changedTouches[0];
+                    const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+                    if (elem && elem.closest(CONTENEDOR)) {
+                        const ahora = Date.now();
+                        const diff = ahora - ultimoToque;
+                        if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
+                            if (toqueTimer) clearTimeout(toqueTimer);
+                            ocultarBotonAltavoz(); limpiarSeleccion();
+                            const parrafo = elem.closest(SELECTORES_TEXTO);
+                            if (parrafo) {
+                                e.preventDefault(); e.stopPropagation(); iniciar(parrafo);
+                            }
+                            ultimoToque = 0;
+                        } else {
+                            ultimoToque = ahora;
+                            if (toqueTimer) clearTimeout(toqueTimer);
+                            toqueTimer = setTimeout(() => {
+                                if (leyendo) detener();
+                                toqueTimer = null;
+                            }, DOBLE_TOQUE_MAX);
+                        }
+                    }
+                }
+                // Si estábamos en pausa por gesto, reanudar
                 if (manualScrolling) {
                     resumeAutoScrollIfNeeded();
                 }
             }
-        });
+        }, { capture: true, passive: false });
 
         contenedor.addEventListener('dblclick', function(e) {
             ocultarBotonAltavoz();
