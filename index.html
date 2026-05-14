@@ -285,6 +285,14 @@
         .processing-card .spinner { width: 40px; height: 40px; border: 3px solid #eee; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .processing-card .msg { font-size: 0.95rem; color: #333; line-height: 1.4; padding: 0 4px; }
+
+        /* Toast para velocidad de auto‑scroll */
+        #scroll-speed-toast {
+            position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.75); color: #fff; padding: 8px 18px; border-radius: 20px;
+            font-size: 0.9rem; font-weight: 600; z-index: 9999; opacity: 0; transition: opacity 0.2s;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -343,6 +351,8 @@
 </div>
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
+<!-- Toast para velocidad de auto‑scroll -->
+<div id="scroll-speed-toast"></div>
 
 <!-- ========== TTS + AUTO‑SCROLL CONTINUO ========== -->
 <script>
@@ -371,11 +381,11 @@
     const CORRECCION_VELOCIDAD = 1.0;
 
     // Auto‑scroll
-    const SCROLL_AUTO_DEFAULT_SPEED = 40;   // píxeles por segundo
+    const SCROLL_AUTO_DEFAULT_SPEED = 20;   // píxeles por segundo (más lento)
     const SCROLL_SPEED_STEP = 5;
-    const SCROLL_SPEED_MIN = 10;
+    const SCROLL_SPEED_MIN = 5;
     const SCROLL_SPEED_MAX = 120;
-    const MANUAL_SCROLL_RESUME_DELAY = 200; // ms tras soltar un dedo
+    const MANUAL_SCROLL_RESUME_DELAY = 200;
 
     let autoScrollSpeed = SCROLL_AUTO_DEFAULT_SPEED;
     let autoScrollActive = false;
@@ -387,7 +397,7 @@
     // Gestos táctiles
     let twoFingerActive = false;
     let twoFingerStartY = 0;
-    let isSingleTouch = false;   // para ignorar doble‑toque con más de un dedo
+    let isSingleTouch = false;
 
     let leyendo = false;
     let utterance = null;
@@ -401,6 +411,21 @@
 
     let speakerBtn = null;
     let selectionData = null;
+
+    // Toast para velocidad
+    const $toast = document.getElementById('scroll-speed-toast');
+    let toastTimer = null;
+
+    function showSpeedToast(speed) {
+        if ($toast) {
+            $toast.textContent = speed + ' px/s';
+            $toast.style.opacity = '1';
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                $toast.style.opacity = '0';
+            }, 1000);
+        }
+    }
 
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
@@ -467,14 +492,14 @@
     // ========== AUTO‑SCROLL ==========
     function startAutoScroll() {
         if (!autoScrollActive || manualScrolling) return;
-        stopAutoScroll(); // por seguridad
+        stopAutoScroll();
         autoScrollLastTime = performance.now();
         function step(now) {
             if (!autoScrollActive || manualScrolling) {
                 autoScrollRAF = null;
                 return;
             }
-            const elapsed = (now - autoScrollLastTime) / 1000; // segundos
+            const elapsed = (now - autoScrollLastTime) / 1000;
             autoScrollLastTime = now;
             const current = getScrollTop();
             const maxScroll = scrollContainer === window
@@ -631,7 +656,6 @@
         requestWakeLock();
         scrollContainer = obtenerScrollContainer();
 
-        // Activar auto‑scroll
         autoScrollActive = true;
         manualScrolling = false;
         startAutoScroll();
@@ -682,7 +706,6 @@
         indiceBloque = -1;
         releaseWakeLock();
 
-        // Desactivar auto‑scroll
         autoScrollActive = false;
         stopAutoScroll();
         manualScrolling = false;
@@ -807,15 +830,14 @@
             if (twoFingerActive && e.touches.length === 2) {
                 const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
                 const deltaY = currentY - twoFingerStartY;
-                const threshold = 25;
+                const threshold = 20;
                 if (Math.abs(deltaY) >= threshold) {
                     if (deltaY > 0) {
-                        // deslizar hacia abajo → reducir velocidad
                         autoScrollSpeed = Math.max(SCROLL_SPEED_MIN, autoScrollSpeed - SCROLL_SPEED_STEP);
                     } else {
-                        // deslizar hacia arriba → aumentar velocidad
                         autoScrollSpeed = Math.min(SCROLL_SPEED_MAX, autoScrollSpeed + SCROLL_SPEED_STEP);
                     }
+                    showSpeedToast(autoScrollSpeed);
                     twoFingerStartY = currentY;
                 }
                 e.preventDefault();
@@ -849,7 +871,7 @@
 })();
 </script>
 
-<!-- ========== LECTOR PRINCIPAL (completo, sin cambios) ========== -->
+<!-- ========== LECTOR PRINCIPAL (sin cambios) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
