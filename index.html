@@ -324,14 +324,16 @@
     <div id="search-results-overlay" class="search-results-overlay"><div class="search-results-modal" id="search-results-modal"><h3>Resultados</h3><div id="search-results-list"></div></div></div>
     <div id="chapters-overlay" class="chapters-overlay"><div class="chapters-modal" id="chapters-modal"><h3>Capítulos</h3><div id="chapters-list"></div></div></div>
     <div id="bookmarks-overlay" class="bookmarks-overlay"><div class="bookmarks-modal" id="bookmarks-modal"><h3>Marcadores</h3><button class="add-bookmark-btn" id="btn-add-bookmark">+ Añadir marcador</button><div class="bookmark-form" id="bookmark-form" style="display:none;"><div class="note-wrapper"><textarea id="bookmark-note" class="note-input" placeholder="Nota (opcional)..." rows="1"></textarea><button class="note-clear-btn" id="clear-note-btn" title="Borrar nota">✕</button></div><div class="bookmark-form-buttons"><button id="btn-cancel-bookmark">Cancelar</button><button class="primary" id="btn-save-bookmark">Guardar</button></div></div><div id="bookmarks-list"></div></div></div>
-    <div id="comment-edit-overlay" class="comment-edit-overlay">
-        <div class="comment-edit-modal">
-            <h3>Comentario</h3>
-            <textarea id="comment-textarea" style="width:100%; height:120px; resize:vertical; font-family:inherit; padding:8px; border:1px solid var(--reader-border); border-radius:6px;"></textarea>
-            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
-                <button id="btn-cancel-comment" style="padding:6px 16px; background:#eee; border:1px solid #ccc; border-radius:6px; cursor:pointer;">Cancelar</button>
-                <button id="btn-save-comment" style="padding:6px 16px; background:var(--accent); color:#fff; border:none; border-radius:6px; cursor:pointer;">Guardar</button>
-            </div>
+</div>
+
+<!-- Comment edit overlay (fuera de las pantallas para que sea global) -->
+<div id="comment-edit-overlay" class="comment-edit-overlay">
+    <div class="comment-edit-modal">
+        <h3>Comentario</h3>
+        <textarea id="comment-textarea" style="width:100%; height:120px; resize:vertical; font-family:inherit; padding:8px; border:1px solid var(--reader-border); border-radius:6px;"></textarea>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+            <button id="btn-cancel-comment" style="padding:6px 16px; background:#eee; border:1px solid #ccc; border-radius:6px; cursor:pointer;">Cancelar</button>
+            <button id="btn-save-comment" style="padding:6px 16px; background:var(--accent); color:#fff; border:none; border-radius:6px; cursor:pointer;">Guardar</button>
         </div>
     </div>
 </div>
