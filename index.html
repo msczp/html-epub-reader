@@ -6,7 +6,6 @@
     <title>HTML ePub Reader</title>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <style>
-        /* ========== ESTILOS (sin cambios excepto el añadido de hyphens) ========== */
         :root {
             --bg: #e8e5df;
             --reader-bg: #f5f5f5;
@@ -224,7 +223,7 @@
         #reader-container::-webkit-scrollbar { display: none; }
         .book-content { font-size: 1.05rem; line-height: 1.7 !important; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%; overflow-x: hidden; font-weight: normal; }
 
-        /* ========== NUEVO: Eliminar guiones al final de línea ========== */
+        /* ===== NUEVO: eliminar guiones al partir palabras ===== */
         .book-content, .book-content * {
             hyphens: none !important;
             -webkit-hyphens: none !important;
@@ -366,7 +365,7 @@
     const SELECTOR_SEPARADOR_TAG = 'hr';
     const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
 
-    let velocidadTTS = 2.0;   // velocidad por defecto
+    let velocidadTTS = 2.0;
     const PAUSA_ENTRE_PARRAFOS = 150;
     const DOBLE_TOQUE_MAX = 300;
     const SCROLL_PORCENTAJE = 0.42;
@@ -378,7 +377,7 @@
     const CORRECCION_VELOCIDAD = 1.0;
 
     const FALLBACK_DELAY = 400;
-    const SCROLL_ANIMATION_MS = 800;   /* ← más suave: 800 ms en lugar de 500 */
+    const SCROLL_ANIMATION_MS = 800;   // ← más suave (antes 500)
 
     let leyendo = false;
     let utterance = null;
@@ -408,22 +407,1215 @@
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
 
-    // (resto del código TTS sin cambios...)
-    // Se incluye completo pero por brevedad se omite aquí. Es el mismo código que antes.
-    // Asegúrate de copiar todo el bloque TTS de las respuestas anteriores íntegro.
+    document.addEventListener('contextmenu', function(e) {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) return;
+        const range = selection.getRangeAt(0);
+        const nodo = range.startContainer;
+        const parrafo = nodo.parentElement?.closest(SELECTORES_TEXTO);
+        if (parrafo && document.querySelector(CONTENEDOR)?.contains(parrafo)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, { capture: true, passive: false });
 
-    /* ... todo el código de TTS (funciones igual que antes, solo cambió SCROLL_ANIMATION_MS) ... */
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+        ${CONTENEDOR} * {
+            -webkit-touch-callout: none !important;
+            -webkit-user-select: text !important;
+            user-select: text !important;
+        }
+    `;
+    document.head.appendChild(styleEl);
+
+    async function requestWakeLock() {
+        if ('wakeLock' in navigator) {
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                wakeLock.addEventListener('release', () => { wakeLock = null; });
+            } catch (err) {}
+        }
+    }
+    function releaseWakeLock() {
+        if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+    }
+
+    function obtenerScrollContainer() {
+        const contenedor = document.querySelector(CONTENEDOR);
+        if (!contenedor) return window;
+        const style = getComputedStyle(contenedor);
+        if (style.overflowY === 'auto' || style.overflowY === 'scroll' || contenedor.scrollHeight > contenedor.clientHeight) {
+            return contenedor;
+        }
+        return window;
+    }
+
+    function getScrollTop() {
+        return scrollContainer === window ? window.scrollY : scrollContainer.scrollTop;
+    }
+
+    function setScrollTop(value) {
+        if (scrollContainer === window) {
+            window.scrollTo(0, value);
+        } else {
+            scrollContainer.scrollTop = value;
+        }
+    }
+
+    function animateScrollTo(targetScroll, duration) {
+        if (isAnimating) {
+            cancelAnimationFrame(animFrameId);
+            isAnimating = false;
+        }
+        const start = getScrollTop();
+        const change = targetScroll - start;
+        if (Math.abs(change) < 0.5) return;
+
+        const startTime = performance.now();
+        isAnimating = true;
+
+        function step(now) {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            setScrollTop(start + change * ease);
+
+            if (progress < 1) {
+                animFrameId = requestAnimationFrame(step);
+            } else {
+                isAnimating = false;
+                animFrameId = null;
+            }
+        }
+        animFrameId = requestAnimationFrame(step);
+    }
+
+    function ajustarScrollAPalabra(globalChar) {
+        if (!currentElem) return;
+        const charPos = getCharPosition(currentElem, globalChar);
+        if (!charPos) return;
+
+        const container = document.querySelector(CONTENEDOR);
+        if (!container) return;
+        const cs = getComputedStyle(container);
+        const pTop = parseFloat(cs.paddingTop) || 0;
+        const contHeight = container.clientHeight;
+        const contRect = container.getBoundingClientRect();
+        const contentHeight = contHeight - pTop;
+        const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+
+        const delta = charPos.top - desiredTop;
+        if (Math.abs(delta) <= SCROLL_TOLERANCIA) return;
+
+        const targetScroll = getScrollTop() + delta;
+        animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+    }
+
+    function getCharPosition(elem, charIndex) {
+        const walker = document.createTreeWalker(elem, NodeFilter.SHOW_TEXT, null, false);
+        let current = 0;
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            const length = node.textContent.length;
+            if (current + length > charIndex) {
+                const offset = charIndex - current;
+                const range = document.createRange();
+                range.setStart(node, offset);
+                range.setEnd(node, Math.min(offset + 1, length));
+                const rect = range.getClientRects()[0];
+                if (rect) return { top: rect.top, left: rect.left };
+                return null;
+            }
+            current += length;
+        }
+        return null;
+    }
+
+    function obtenerBloques() {
+        const contenedor = document.querySelector(CONTENEDOR);
+        if (!contenedor) return [];
+        const elementos = contenedor.querySelectorAll(
+            `${SELECTORES_TEXTO}, ${SELECTORES_IMAGEN}, ${SELECTOR_SEPARADOR_TAG}`
+        );
+        const lista = [];
+        const textosVistos = new Set();
+        for (const el of elementos) {
+            if (el.offsetParent === null && getComputedStyle(el).display === 'none') continue;
+
+            if (el.tagName === 'HR') {
+                lista.push({ tipo: 'separador', elemento: el });
+                continue;
+            }
+            if (el.matches(SELECTORES_IMAGEN)) {
+                lista.push({ tipo: 'imagen', elemento: el });
+                continue;
+            }
+
+            let texto = el.textContent.trim();
+            if (SEPARADOR_TEXTO.test(texto)) {
+                lista.push({ tipo: 'separador', elemento: el });
+                continue;
+            }
+            if (texto.length < LONGITUD_MINIMA_TEXTO) continue;
+            const key = el.tagName + '|' + texto;
+            if (textosVistos.has(key)) continue;
+            textosVistos.add(key);
+
+            lista.push({ tipo: 'texto', elemento: el, texto });
+        }
+        return lista;
+    }
+
+    function leerBloque(indice, callback, innerStartOffset = 0) {
+        if (!leyendo) return callback(false);
+        const bloque = bloques[indice];
+        if (!bloque) return callback(false);
+
+        if (bloque.tipo === 'separador') {
+            detenerSincronizacion();
+            setTimeout(() => callback(true), PAUSA_SEPARADOR);
+            return;
+        }
+        if (bloque.tipo === 'imagen') {
+            detenerSincronizacion();
+            callback(true);
+            return;
+        }
+
+        currentElem = bloque.elemento;
+        fullText = bloque.texto.replace(/\//g, ', ');
+        startOffsetGlobal = innerStartOffset;
+        const textoParaLeer = fullText.substring(startOffsetGlobal);
+
+        const charsPerSec = BASE_CHARS_PER_SEC * velocidadTTS * CORRECCION_VELOCIDAD;
+        bloqueTotalDuration = (textoParaLeer.length / charsPerSec) * 1000;
+        bloqueStartTime = performance.now();
+
+        onboundaryActive = false;
+        lastBoundaryTime = 0;
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+
+        const u = new SpeechSynthesisUtterance(textoParaLeer);
+        u.lang = 'es-ES';
+        u.rate = velocidadTTS;
+        u.pitch = 1.0;
+
+        u.onboundary = function(event) {
+            if (!leyendo || !currentElem) return;
+            onboundaryActive = true;
+            lastBoundaryTime = performance.now();
+            if (event.name === 'word' || event.name === 'sentence') {
+                const globalChar = event.charIndex + startOffsetGlobal;
+                ajustarScrollAPalabra(globalChar);
+            }
+        };
+
+        function startFallback() {
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            fallbackTimer = setTimeout(() => {
+                if (!leyendo || !currentElem) return;
+                const ahora = performance.now();
+                if (!onboundaryActive || (ahora - lastBoundaryTime > 700)) {
+                    const elapsed = ahora - bloqueStartTime;
+                    const progress = Math.min(elapsed / bloqueTotalDuration, 1);
+                    const estimatedGlobalChar = Math.floor(progress * (fullText.length - startOffsetGlobal)) + startOffsetGlobal;
+                    ajustarScrollAPalabra(estimatedGlobalChar);
+                }
+                if (leyendo) {
+                    fallbackTimer = setTimeout(startFallback, FALLBACK_DELAY);
+                }
+            }, FALLBACK_DELAY);
+        }
+        startFallback();
+
+        u.onend = () => {
+            detenerSincronizacion();
+            utterance = null;
+            callback(true);
+        };
+        u.onerror = () => {
+            detenerSincronizacion();
+            utterance = null;
+            callback(false);
+        };
+
+        utterance = u;
+        speechSynthesis.speak(u);
+    }
+
+    function detenerSincronizacion() {
+        clearTimeout(fallbackTimer);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        isAnimating = false;
+        animFrameId = null;
+        currentElem = null;
+    }
+
+    function procesarSiguienteBloque() {
+        if (timeoutSig) clearTimeout(timeoutSig);
+        if (!leyendo) return;
+
+        indiceBloque++;
+        if (indiceBloque >= bloques.length) {
+            detener();
+            return;
+        }
+
+        const bloque = bloques[indiceBloque];
+        if (bloque.elemento) {
+            const firstChar = getCharPosition(bloque.elemento, 0);
+            if (firstChar) {
+                const container = document.querySelector(CONTENEDOR);
+                const cs = getComputedStyle(container);
+                const pTop = parseFloat(cs.paddingTop) || 0;
+                const contHeight = container.clientHeight;
+                const contRect = container.getBoundingClientRect();
+                const contentHeight = contHeight - pTop;
+                const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+                const delta = firstChar.top - desiredTop;
+                const targetScroll = getScrollTop() + delta;
+                animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+            } else {
+                scrollElementoAlPorcentaje(bloque.elemento, SCROLL_PORCENTAJE);
+            }
+        }
+
+        let pausaPrevia = PAUSA_ENTRE_PARRAFOS;
+        if (bloque.tipo === 'imagen') pausaPrevia = PAUSA_IMAGEN;
+        else if (bloque.tipo === 'separador') pausaPrevia = 0;
+
+        timeoutSig = setTimeout(() => {
+            timeoutSig = null;
+            if (!leyendo) return;
+            if (bloque.tipo === 'imagen' || bloque.tipo === 'separador') {
+                procesarSiguienteBloque();
+            } else {
+                leerBloque(indiceBloque, (exito) => {
+                    if (exito) procesarSiguienteBloque();
+                });
+            }
+        }, pausaPrevia + 100);
+    }
+
+    function scrollElementoAlPorcentaje(elem, porcentaje) {
+        if (!elem) return;
+        const container = document.querySelector(CONTENEDOR);
+        if (!container) return;
+        const cs = getComputedStyle(container);
+        const pTop = parseFloat(cs.paddingTop) || 0;
+        const contHeight = container.clientHeight;
+        const contRect = container.getBoundingClientRect();
+        const contentHeight = contHeight - pTop;
+        const desiredTop = contRect.top + pTop + contentHeight * porcentaje;
+
+        const textNode = elem.firstChild;
+        let firstCharTop;
+        if (textNode && textNode.nodeType === Node.TEXT_NODE && textNode.length > 0) {
+            const range = document.createRange();
+            range.setStart(textNode, 0);
+            range.setEnd(textNode, 1);
+            const rect = range.getClientRects()[0];
+            firstCharTop = rect ? rect.top : elem.getBoundingClientRect().top;
+        } else {
+            firstCharTop = elem.getBoundingClientRect().top;
+        }
+
+        const currentScroll = getScrollTop();
+        let targetScroll;
+        if (scrollContainer === window) {
+            targetScroll = currentScroll + firstCharTop - desiredTop;
+        } else {
+            const contRect2 = container.getBoundingClientRect();
+            const relativeTop = firstCharTop - contRect2.top;
+            targetScroll = currentScroll + relativeTop - (desiredTop - contRect2.top);
+        }
+        animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+    }
+
+    function iniciar(parrafo) {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        detener();
+        const todos = obtenerBloques();
+        if (todos.length === 0) return;
+
+        let idx = todos.findIndex(b => b.elemento === parrafo);
+        if (idx === -1) {
+            const txt = parrafo.textContent.trim();
+            idx = todos.findIndex(b => b.tipo === 'texto' && b.elemento.textContent.trim() === txt);
+        }
+        if (idx === -1) return;
+
+        bloques = todos;
+        indiceBloque = idx - 1;
+        leyendo = true;
+        requestWakeLock();
+        scrollContainer = obtenerScrollContainer();
+        scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
+        procesarSiguienteBloque();
+    }
+
+    function iniciarDesdeSeleccion(parrafo, charIndex) {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        detener();
+        const todos = obtenerBloques();
+        if (todos.length === 0) return;
+
+        let idx = todos.findIndex(b => b.elemento === parrafo);
+        if (idx === -1) {
+            const txt = parrafo.textContent.trim();
+            idx = todos.findIndex(b => b.tipo === 'texto' && b.elemento.textContent.trim() === txt);
+        }
+        if (idx === -1) return;
+
+        bloques = todos;
+        indiceBloque = idx;
+        leyendo = true;
+        requestWakeLock();
+        scrollContainer = obtenerScrollContainer();
+
+        const pos = getCharPosition(parrafo, charIndex);
+        if (pos) {
+            const container = document.querySelector(CONTENEDOR);
+            const cs = getComputedStyle(container);
+            const pTop = parseFloat(cs.paddingTop) || 0;
+            const contHeight = container.clientHeight;
+            const contRect = container.getBoundingClientRect();
+            const contentHeight = contHeight - pTop;
+            const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+            const delta = pos.top - desiredTop;
+            const targetScroll = getScrollTop() + delta;
+            animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+        } else {
+            scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
+        }
+
+        leerBloque(idx, (exito) => {
+            if (exito) {
+                indiceBloque = idx;
+                procesarSiguienteBloque();
+            }
+        }, charIndex);
+    }
+
+    function detener() {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        if (timeoutSig) clearTimeout(timeoutSig);
+        detenerSincronizacion();
+        if (speechSynthesis) speechSynthesis.cancel();
+        leyendo = false;
+        utterance = null;
+        bloques = [];
+        indiceBloque = -1;
+        releaseWakeLock();
+    }
+
+    function limpiarSeleccion() {
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed) {
+            sel.removeAllRanges();
+        }
+    }
+
+    function crearBotonAltavoz() {
+        if (speakerBtn) return;
+        speakerBtn = document.createElement('div');
+        speakerBtn.id = 'tts-speaker-btn';
+        speakerBtn.style.cssText = `
+            position: fixed; bottom: 24px; right: 24px;
+            width: 56px; height: 56px; border-radius: 50%;
+            background: #333; color: #fff; font-size: 28px;
+            display: none; align-items: center; justify-content: center;
+            z-index: 9999999; cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: transform 0.2s, background 0.2s;
+            user-select: none;
+        `;
+        speakerBtn.innerHTML = '🔊';
+        speakerBtn.addEventListener('click', () => {
+            if (selectionData) {
+                iniciarDesdeSeleccion(selectionData.parrafo, selectionData.charIndex);
+                selectionData = null;
+            }
+        });
+        speakerBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+        speakerBtn.addEventListener('touchstart', (e) => e.stopPropagation());
+        document.body.appendChild(speakerBtn);
+    }
+
+    function mostrarBotonAltavoz() {
+        if (!speakerBtn) crearBotonAltavoz();
+        speakerBtn.style.display = 'flex';
+    }
+    function ocultarBotonAltavoz() {
+        if (speakerBtn) speakerBtn.style.display = 'none';
+        selectionData = null;
+    }
+
+    function manejarSeleccion() {
+        if (leyendo) { ocultarBotonAltavoz(); return; }
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) { ocultarBotonAltavoz(); return; }
+        const range = selection.getRangeAt(0);
+        const startNode = range.startContainer;
+        const parrafo = startNode.parentElement?.closest(SELECTORES_TEXTO);
+        if (!parrafo || !document.querySelector(CONTENEDOR)?.contains(parrafo)) { ocultarBotonAltavoz(); return; }
+        const startOffset = range.startOffset;
+        const nodo = startNode.nodeType === Node.TEXT_NODE ? startNode : null;
+        if (!nodo) { ocultarBotonAltavoz(); return; }
+        const walker = document.createTreeWalker(parrafo, NodeFilter.SHOW_TEXT, null, false);
+        let charIndex = 0;
+        let found = false;
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            if (node === nodo) { charIndex += startOffset; found = true; break; }
+            charIndex += node.textContent.length;
+        }
+        if (!found) { ocultarBotonAltavoz(); return; }
+        selectionData = { parrafo, charIndex };
+        mostrarBotonAltavoz();
+    }
+
+    document.addEventListener('mouseup', () => setTimeout(manejarSeleccion, 20));
+    document.addEventListener('touchend', () => setTimeout(manejarSeleccion, 20));
+    document.addEventListener('mousedown', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
+    document.addEventListener('touchstart', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
+
+    const contenedor = document.querySelector(CONTENEDOR);
+    if (contenedor) {
+        contenedor.addEventListener('dblclick', function(e) {
+            ocultarBotonAltavoz();
+            limpiarSeleccion();
+            const parrafo = e.target.closest(SELECTORES_TEXTO);
+            if (parrafo) {
+                e.preventDefault();
+                e.stopPropagation();
+                iniciar(parrafo);
+            }
+        }, { capture: true });
+
+        contenedor.addEventListener('touchend', function(e) {
+            const touch = e.changedTouches[0];
+            const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (!elem || !elem.closest(CONTENEDOR)) return;
+
+            const ahora = Date.now();
+            const diff = ahora - ultimoToque;
+
+            if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
+                if (toqueTimer) clearTimeout(toqueTimer);
+                ocultarBotonAltavoz(); limpiarSeleccion();
+                const parrafo = elem.closest(SELECTORES_TEXTO);
+                if (parrafo) {
+                    e.preventDefault(); e.stopPropagation(); iniciar(parrafo);
+                }
+                ultimoToque = 0;
+            } else {
+                ultimoToque = ahora;
+                if (toqueTimer) clearTimeout(toqueTimer);
+                toqueTimer = setTimeout(() => { if (leyendo) detener(); toqueTimer = null; }, DOBLE_TOQUE_MAX);
+            }
+        }, { capture: true, passive: false });
+    }
+
+    scrollContainer = obtenerScrollContainer();
 })();
 </script>
 
 <!-- ========== LECTOR PRINCIPAL ========== -->
 <script>
 (function() {
-    // (código del lector completo, sin cambios respecto a la versión anterior que ya incluía comentarios y tamaños)
-    // Se mantiene todo el script del lector, incluyendo renderLibrary, openBookForReading, etc.
-    // Por completitud se indica que debe copiarse íntegro.
+    const $ = (sel) => document.querySelector(sel);
+    const $libraryScreen = $('#library-screen'), $readerScreen = $('#reader-screen'), $bookList = $('#book-list'), $fileInput = $('#file-input'), $uploadFab = $('#upload-btn-fab'), $readerContainer = $('#reader-container'), $optionsPanel = $('#options-panel'), $headerChapterTitle = $('#header-chapter-title'), $indPagesLeftChapter = $('#ind-pages-left-chapter'), $infoCenter = $('#info-center'), $infoPercent = $('#info-percent'), $infoPagesLeft = $('#info-pages-left'), $processingOverlay = $('#processing-overlay'), $procMsg = $('#proc-msg'), $progressBarFill = $('#progress-bar-fill'), $progressBarContainer = $('#progress-bar-container'), $chapterMarkers = $('#chapter-markers'), $btnBackLibrary = $('#btn-back-library'), $btnChapters = $('#btn-chapters'), $btnBookmarks = $('#btn-bookmarks'), $btnFullscreen = $('#btn-fullscreen'), $searchRow = $('#search-row'), $searchInput = $('#search-input'), $clearSearchBtn = $('#clear-search-btn'), $btnSearchResults = $('#btn-search-results'), $searchResultsOverlay = $('#search-results-overlay'), $searchResultsList = $('#search-results-list'), $chaptersOverlay = $('#chapters-overlay'), $chaptersList = $('#chapters-list'), $bookmarksOverlay = $('#bookmarks-overlay'), $bookmarksList = $('#bookmarks-list'), $btnAddBookmark = $('#btn-add-bookmark'), $bookmarkForm = $('#bookmark-form'), $bookmarkNote = $('#bookmark-note'), $clearNoteBtn = $('#clear-note-btn'), $btnSaveBookmark = $('#btn-save-bookmark'), $btnCancelBookmark = $('#btn-cancel-bookmark'), $readerHeader = $('#reader-header'), $backLinkBtn = $('#back-link-btn');
+    const $commentEditOverlay = $('#comment-edit-overlay');
+    const $commentTextarea = $('#comment-textarea');
+    const $btnSaveComment = $('#btn-save-comment');
+    const $btnCancelComment = $('#btn-cancel-comment');
 
-    /* ... todo el código del lector (más de 800 líneas) ... */
+    const DB_NAME = 'epub_reader_v91';
+    let db, editingBookmarkId = null;
+    let isRenderingLibrary = false, isClosingReader = false;
+    let lastLinkScroll = null;
+    let currentBookCommentId = null;
+
+    const FRONT_MATTER_TITLES = ['Cubierta', 'Cállate', 'Portadilla', 'Cita', 'Sinopsis'];
+
+    function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
+    function dbAddBook(d) { return new Promise((res, rej) => { const tx = db.transaction('books','readwrite'); tx.objectStore('books').put(d); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+    function dbGetBook(id) { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').get(id); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+    function dbGetAllBooks() { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').getAll(); r.onsuccess = () => { const b = r.result || []; b.sort((a,b) => (b.dateAdded||0)-(a.dateAdded||0)); res(b); }; r.onerror = () => rej(r.error); }); }
+    function dbDeleteBook(id) { return new Promise((res, rej) => { const tx = db.transaction(['books','progress','bookmarks'],'readwrite'); tx.objectStore('books').delete(id); tx.objectStore('progress').delete(id); const c = tx.objectStore('bookmarks').index('bookId').openCursor(IDBKeyRange.only(id)); c.onsuccess = e => { const cur = e.target.result; if (cur) { cur.delete(); cur.continue(); } }; tx.oncomplete = () => { try { localStorage.removeItem('last_progress_v91_'+id); } catch(e) {} res(); }; tx.onerror = () => rej(tx.error); }); }
+    function dbSaveProgress(bid, data) { return new Promise((res, rej) => { const tx = db.transaction('progress','readwrite'); tx.objectStore('progress').put({ bookId: bid, ...data, updatedAt: Date.now() }); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+    function dbGetProgress(bid) { return new Promise((res, rej) => { const tx = db.transaction('progress','readonly'); const r = tx.objectStore('progress').get(bid); r.onsuccess = () => res(r.result || null); r.onerror = () => rej(r.error); }); }
+    function dbAddBookmark(bm) { return new Promise((res, rej) => { const tx = db.transaction('bookmarks','readwrite'); tx.objectStore('bookmarks').add(bm); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+    function dbUpdateBookmark(id, note) { return new Promise((res, rej) => { const tx = db.transaction('bookmarks','readwrite'); const store = tx.objectStore('bookmarks'); const r = store.get(id); r.onsuccess = () => { const b = r.result; if (b) { b.note = note; store.put(b); } }; tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+    function dbGetBookmarks(bid) { return new Promise((res, rej) => { const tx = db.transaction('bookmarks','readonly'); const idx = tx.objectStore('bookmarks').index('bookId'); const r = idx.getAll(bid); r.onsuccess = () => { const b = r.result || []; b.sort((a,b) => (a.globalPage||0)-(b.globalPage||0)); res(b); }; r.onerror = () => rej(r.error); }); }
+    function dbDeleteBookmark(id) { return new Promise((res, rej) => { const tx = db.transaction('bookmarks','readwrite'); tx.objectStore('bookmarks').delete(id); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+    function dbUpdateBookComment(bookId, comment) {
+        return new Promise((res, rej) => {
+            const tx = db.transaction('books', 'readwrite');
+            const store = tx.objectStore('books');
+            const r = store.get(bookId);
+            r.onsuccess = () => {
+                const book = r.result;
+                if (book) {
+                    book.comment = comment;
+                    store.put(book);
+                }
+            };
+            tx.oncomplete = () => res();
+            tx.onerror = () => rej(tx.error);
+        });
+    }
+
+    function generateId() { return 'b_'+Date.now()+'_'+Math.random().toString(36).substr(2,6); }
+    function stripHtml(html) { const doc = new DOMParser().parseFromString(html,'text/html'); return (doc.body.textContent||'').replace(/\s+/g,' ').trim(); }
+    function extractFirstHeading(html) { const doc = new DOMParser().parseFromString(html,'text/html'); const h = doc.querySelector('h1,h2,h3,h4'); return h ? h.textContent.trim() : null; }
+    function splitIntoPages(text, charsPerPage=2000) { const pages = []; if (!text?.length) return ['']; let rem = text; while (rem.length > charsPerPage) { let cut = charsPerPage; const slice = rem.substr(charsPerPage,120); const m = slice.match(/[\s.,;:!?¡¿—\-'"»)]/); if (m?.index !== undefined) cut = charsPerPage + m.index + 1; pages.push(rem.substring(0,cut).trim()); rem = rem.substring(cut).trim(); } if (rem) pages.push(rem.trim()); return pages.length ? pages : ['']; }
+    function blobToBase64(blob) { return new Promise((res, rej) => { const reader = new FileReader(); reader.onloadend = () => res(reader.result); reader.onerror = rej; reader.readAsDataURL(blob); }); }
+
+    function hideOptionsPanel() { optionsVisible = false; $optionsPanel.classList.remove('visible'); }
+
+    function requestFullscreen() {
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            const el = document.documentElement;
+            const req = el.requestFullscreen || el.webkitRequestFullscreen;
+            if (req) req.call(el).then(() => hideOptionsPanel()).catch(() => {});
+        }
+    }
+    function exitFullscreen() { if (document.fullscreenElement || document.webkitFullscreenElement) { const exit = document.exitFullscreen || document.webkitExitFullscreen; if (exit) exit.call(document).then(() => hideOptionsPanel()).catch(()=>{}); } }
+    function toggleFullscreen() { if (!document.fullscreenElement && !document.webkitFullscreenElement) requestFullscreen(); else exitFullscreen(); }
+    document.addEventListener('fullscreenchange', () => hideOptionsPanel());
+    document.addEventListener('webkitfullscreenchange', () => hideOptionsPanel());
+
+    $clearSearchBtn.addEventListener('click', () => { $searchInput.value = ''; $clearSearchBtn.classList.remove('visible'); $searchInput.focus(); });
+    $searchInput.addEventListener('input', () => { $clearSearchBtn.classList.toggle('visible', $searchInput.value.length > 0); });
+    $clearNoteBtn.addEventListener('click', () => { $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkNote.focus(); });
+    $bookmarkNote.addEventListener('input', () => { $clearNoteBtn.classList.toggle('visible', $bookmarkNote.value.length > 0); autoResizeTextarea(); });
+
+    function showCommentEditor(bookId, currentComment) {
+        currentBookCommentId = bookId;
+        $commentTextarea.value = currentComment || '';
+        $commentEditOverlay.classList.add('active');
+    }
+
+    function hideCommentEditor() {
+        $commentEditOverlay.classList.remove('active');
+        currentBookCommentId = null;
+    }
+
+    $btnCancelComment.addEventListener('click', hideCommentEditor);
+    $commentEditOverlay.addEventListener('click', e => { if (e.target === $commentEditOverlay) hideCommentEditor(); });
+    $btnSaveComment.addEventListener('click', async () => {
+        if (!currentBookCommentId) return;
+        const newComment = $commentTextarea.value.trim();
+        await dbUpdateBookComment(currentBookCommentId, newComment);
+        hideCommentEditor();
+        renderLibrary();
+    });
+
+    function fixInternalLinks(html, hrefToIndex) {
+        return html.replace(/<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi, (match, href) => {
+            if (href.startsWith('http') || href.startsWith('#')) return match;
+            const [cleanPath, fragment] = href.split('#');
+            const cleanHref = cleanPath.split('?')[0].trim();
+            const bare = cleanHref.split('/').pop();
+            let targetIndex = hrefToIndex.get(cleanHref);
+            if (targetIndex === undefined) targetIndex = hrefToIndex.get(bare);
+            if (targetIndex !== undefined) {
+                const newHref = fragment ? `#${fragment}` : '#';
+                return match.replace(/href\s*=\s*["'][^"']+["']/i, `href="${newHref}"`).replace('<a ', `<a data-chapter-link="${targetIndex}" `);
+            }
+            return match.replace(/href\s*=\s*["'][^"']+["']/i, 'href="#"');
+        });
+    }
+
+    function separateNumberFromTitle(title) {
+        return title.replace(/^(\d+)([A-Za-zÀ-ÿ])/, '$1 $2');
+    }
+
+    async function processEpub(arrayBuffer) {
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        const containerFile = zip.file('META-INF/container.xml');
+        if (!containerFile) throw new Error('Falta container.xml');
+        const containerXml = await containerFile.async('string');
+        const containerDoc = new DOMParser().parseFromString(containerXml,'application/xml');
+        const rootfile = containerDoc.querySelector('rootfile[full-path]');
+        if (!rootfile) throw new Error('No se encontró <rootfile>');
+        const opfPath = rootfile.getAttribute('full-path');
+        const opfFile = zip.file(opfPath);
+        if (!opfFile) throw new Error('Falta OPF: '+opfPath);
+        const opfXml = await opfFile.async('string');
+        const opfDoc = new DOMParser().parseFromString(opfXml,'application/xml');
+        const opfDir = opfPath.substring(0, opfPath.lastIndexOf('/')+1);
+        const titleEl = opfDoc.querySelector('metadata > dc\\:title, metadata > title');
+        const authorEl = opfDoc.querySelector('metadata > dc\\:creator, metadata > creator');
+        const bookTitle = titleEl ? titleEl.textContent.trim() : 'Libro sin título';
+        const bookAuthor = authorEl ? authorEl.textContent.trim() : 'Autor desconocido';
+        const manifestItems = {};
+        opfDoc.querySelectorAll('manifest > item').forEach(item => { manifestItems[item.getAttribute('id')] = { href: item.getAttribute('href'), mediaType: item.getAttribute('media-type') }; });
+        const spineItems = [];
+        opfDoc.querySelectorAll('spine > itemref').forEach((ref, idx) => { const idref = ref.getAttribute('idref'); if (manifestItems[idref]) spineItems.push({ index: idx, idref, href: manifestItems[idref].href, mediaType: manifestItems[idref].mediaType }); });
+        const hrefToIndex = new Map();
+        spineItems.forEach((item, idx) => { let href = item.href.split('#')[0].trim(); hrefToIndex.set(href, idx); const bare = href.split('/').pop(); if (bare) hrefToIndex.set(bare, idx); });
+        const spineToc = opfDoc.querySelector('spine')?.getAttribute('toc');
+        let ncxPath = (spineToc && manifestItems[spineToc]) ? manifestItems[spineToc].href : null;
+        if (!ncxPath) { for (const [, item] of Object.entries(manifestItems)) { if (item.mediaType === 'application/x-dtbncx+xml') { ncxPath = item.href; break; } } }
+        let tocMap = {};
+        if (ncxPath) { try { const ncxFile = zip.file(opfDir+ncxPath) || zip.file(ncxPath); if (ncxFile) { const ncxXml = await ncxFile.async('string'); const ncxDoc = new DOMParser().parseFromString(ncxXml,'application/xml'); ncxDoc.querySelectorAll('navPoint').forEach(np => { const label = np.querySelector('navLabel > text'); const content = np.querySelector('content[src]'); if (label && content) tocMap[content.getAttribute('src').split('#')[0].trim()] = label.textContent.trim(); }); } } catch(e) {} }
+        let bookStyles = '';
+        for (const [, item] of Object.entries(manifestItems)) { if (item.mediaType === 'text/css') { try { const cssFile = zip.file(opfDir+item.href) || zip.file(item.href); if (cssFile) bookStyles += await cssFile.async('string') + '\n'; } catch(e) {} } }
+        const imageCache = new Map();
+
+        async function resolveImageDataUrl(src) {
+            if (!src) return null;
+            if (imageCache.has(src)) return imageCache.get(src);
+            let cleanSrc = decodeURIComponent(src);
+            const candidates = [ cleanSrc, opfDir + cleanSrc, cleanSrc.replace(/^\.\//, ''), cleanSrc.split('/').pop() ];
+            let imgFile = null;
+            for (const c of candidates) {
+                imgFile = zip.file(c);
+                if (imgFile) break;
+                if (!imgFile) {
+                    const bareName = c.split('/').pop();
+                    for (const fname of Object.keys(zip.files)) {
+                        if (fname.endsWith('/'+bareName) || fname===bareName) { imgFile = zip.file(fname); break; }
+                    }
+                }
+            }
+            if (imgFile) {
+                try {
+                    const blob = await imgFile.async('blob');
+                    const dataUrl = await blobToBase64(blob);
+                    imageCache.set(src, dataUrl);
+                    return dataUrl;
+                } catch(e) { console.warn('Error imagen:', src, e); }
+            }
+            return null;
+        }
+
+        const sections = [];
+        let globalPage = 0, totalWords = 0;
+        for (let i = 0; i < spineItems.length; i++) {
+            const item = spineItems[i];
+            const fullHref = opfDir + item.href;
+            let htmlFile = zip.file(fullHref) || zip.file(item.href);
+            if (!htmlFile) { const name = item.href.split('/').pop(); for (const fname of Object.keys(zip.files)) { if (fname.endsWith('/'+name) || fname===name) { htmlFile = zip.file(fname); break; } } }
+            if (!htmlFile) { sections.push({ index: i, idref: item.idref, href: item.href, title: null, pageCount: 0, globalStartPage: globalPage, charCount: 0, htmlContent: '' }); continue; }
+            let html = await htmlFile.async('text');
+
+            const imgRegex = /<(img|image)\s+([^>]*?)src\s*=\s*["']([^"']+\.(?:png|jpg|jpeg|gif|svg|webp))["']([^>]*?)>/gi;
+            const svgHrefRegex = /<(image)\s+([^>]*?)href\s*=\s*["']([^"']+\.(?:png|jpg|jpeg|gif|svg|webp))["']([^>]*?)>/gi;
+            const imageUrls = new Set();
+            let match;
+            while ((match = imgRegex.exec(html)) !== null) imageUrls.add(match[3]);
+            while ((match = svgHrefRegex.exec(html)) !== null) imageUrls.add(match[3]);
+            const urlMap = new Map();
+            for (const url of imageUrls) {
+                const dataUrl = await resolveImageDataUrl(url);
+                if (dataUrl) urlMap.set(url, dataUrl);
+            }
+            html = html.replace(/<(img|image)\s+([^>]*?)src\s*=\s*["']([^"']+\.(?:png|jpg|jpeg|gif|svg|webp))["']([^>]*?)>/gi, (m, tag, before, src, after) => {
+                const dataUrl = urlMap.get(src);
+                return dataUrl ? `<${tag} ${before}src="${dataUrl}" ${after}>` : m;
+            });
+            html = html.replace(/<(image)\s+([^>]*?)href\s*=\s*["']([^"']+\.(?:png|jpg|jpeg|gif|svg|webp))["']([^>]*?)>/gi, (m, tag, before, href, after) => {
+                const dataUrl = urlMap.get(href);
+                return dataUrl ? `<${tag} ${before}href="${dataUrl}" ${after}>` : m;
+            });
+
+            html = fixInternalLinks(html, hrefToIndex);
+
+            const text = stripHtml(html);
+            const charCount = text.length;
+            const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
+            totalWords += wordCount;
+            const normHref = item.href.split('#')[0].trim();
+            let title = tocMap[normHref] || tocMap[item.href] || extractFirstHeading(html);
+            if (title && /^Capítulo \d+$/i.test(title)) title = null;
+            const pages = splitIntoPages(text, 2000);
+            const pageCount = pages.length;
+            sections.push({ index: i, idref: item.idref, href: item.href, title, pageCount, globalStartPage: globalPage, charCount, htmlContent: html });
+            globalPage += pageCount;
+        }
+
+        let coverBase64 = null, coverHref = null, coverDataUrl = null;
+        const coverMeta = opfDoc.querySelector('meta[name="cover"]');
+        let coverId = coverMeta ? coverMeta.getAttribute('content') : null;
+        if (!coverId) { const coverItem = opfDoc.querySelector('item[properties="cover-image"]'); if (coverItem) coverId = coverItem.getAttribute('id'); }
+        if (coverId && manifestItems[coverId]) { coverHref = manifestItems[coverId].href; coverDataUrl = await resolveImageDataUrl(coverHref); coverBase64 = coverDataUrl; }
+        if (!coverBase64) { for (const item of Object.values(manifestItems)) { if (item.mediaType && item.mediaType.startsWith('image/')) { const tryCover = await resolveImageDataUrl(item.href); if (tryCover) { coverBase64 = tryCover; coverDataUrl = tryCover; coverHref = item.href; break; } } } }
+
+        return { title: bookTitle, author: bookAuthor, coverBase64, coverHref, coverDataUrl, totalPages: globalPage, totalSections: sections.length, totalWords, sections, bookStyles, processedAt: Date.now() };
+    }
+
+    async function uploadAndProcessBook(file) {
+        $uploadFab.disabled = true;
+        try {
+            showProcessing('Leyendo archivo…'); const arrayBuffer = await file.arrayBuffer();
+            showProcessing('Analizando estructura e imágenes…'); let structure;
+            try { structure = await processEpub(arrayBuffer); } catch (err) { hideProcessing(); alert('Error al procesar: '+err.message); console.error(err); return null; }
+            hideProcessing();
+            const books = await dbGetAllBooks();
+            const duplicado = books.find(b => b.title === structure.title && b.author === structure.author);
+            if (duplicado) return null;
+            showProcessing('Guardando…');
+            const bookData = { id: generateId(), title: structure.title, author: structure.author, coverBase64: structure.coverBase64, coverHref: structure.coverHref, coverDataUrl: structure.coverDataUrl, epubData: arrayBuffer, structure, dateAdded: Date.now(), comment: '' };
+            try { await dbAddBook(bookData); } catch (err) { hideProcessing(); alert('Error al guardar: '+err.message); return null; }
+            hideProcessing(); return bookData;
+        } finally { $uploadFab.disabled = false; }
+    }
+
+    function showProcessing(msg) { $procMsg.textContent = msg; $processingOverlay.classList.add('active'); }
+    function hideProcessing() { $processingOverlay.classList.remove('active'); }
+
+    async function renderLibrary() {
+        if (isRenderingLibrary) return;
+        isRenderingLibrary = true;
+        try {
+            const books = await dbGetAllBooks(); $bookList.innerHTML = '';
+            for (const book of books) {
+                const progress = await dbGetProgress(book.id);
+                const totalPages = book.structure?.totalPages || 0;
+                const currentPage = progress?.globalPage || 0;
+                const percent = totalPages ? Math.round((currentPage/totalPages)*100) : 0;
+                let coverHTML = '';
+                if (book.coverBase64) coverHTML = `<img src="${book.coverBase64}" alt="portada" style="width:100%;height:100%;object-fit:contain;">`;
+                const card = document.createElement('div');
+                card.className = 'book-card'; card.dataset.bookId = book.id;
+                card.innerHTML = `<div class="cover">${coverHTML}</div>
+                    <div class="info">
+                        <div class="title">${escapeHtml(book.title)}</div>
+                        <div class="author">${escapeHtml(book.author)}</div>
+                        <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${percent}%"></div></div>
+                        <div class="progress-text">${totalPages ? `Pág. ${currentPage} de ${totalPages} (${percent}%)` : 'Sin procesar'}</div>
+                    </div>
+                    <button class="comment-btn ${book.comment ? 'has-comment' : ''}" title="Comentario">💬</button>
+                    <button class="menu-btn" aria-label="Menú">☰</button>
+                    <div class="context-menu">
+                        <div class="context-menu-item download-item">Descargar ePub</div>
+                        <div class="context-menu-item delete-item">Eliminar libro</div>
+                    </div>`;
+                const menuBtn = card.querySelector('.menu-btn');
+                const contextMenu = card.querySelector('.context-menu');
+                const commentBtn = card.querySelector('.comment-btn');
+                
+                commentBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showCommentEditor(book.id, book.comment || '');
+                });
+
+                menuBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    document.querySelectorAll('.context-menu.show').forEach(m => { if (m !== contextMenu) m.classList.remove('show'); });
+                    contextMenu.classList.toggle('show');
+                });
+                contextMenu.querySelector('.download-item').addEventListener('click', async (e) => {
+                    e.stopPropagation(); contextMenu.classList.remove('show');
+                    const fullBook = await dbGetBook(book.id);
+                    if (fullBook && fullBook.epubData) {
+                        const blob = new Blob([fullBook.epubData], { type: 'application/epub+zip' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href = url; a.download = (fullBook.title || 'libro') + '.epub';
+                        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                    }
+                });
+                contextMenu.querySelector('.delete-item').addEventListener('click', async (e) => {
+                    e.stopPropagation(); contextMenu.classList.remove('show');
+                    await dbDeleteBook(book.id); renderLibrary();
+                });
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.menu-btn') || e.target.closest('.context-menu') || e.target.closest('.comment-btn')) return;
+                    openBookForReading(book.id);
+                });
+                $bookList.appendChild(card);
+            }
+        } finally { isRenderingLibrary = false; }
+        document.addEventListener('click', () => { document.querySelectorAll('.context-menu.show').forEach(m => m.classList.remove('show')); });
+    }
+
+    function escapeHtml(str) { const div = document.createElement('div'); div.textContent = str; return div.innerHTML; }
+
+    function waitForImages(container) {
+        const images = container.querySelectorAll('img');
+        const promises = [];
+        images.forEach(img => {
+            img.loading = "eager";
+            if (!img.complete) {
+                promises.push(new Promise(resolve => {
+                    img.addEventListener('load', resolve, { once: true });
+                    img.addEventListener('error', resolve, { once: true });
+                }));
+            }
+        });
+        return Promise.all(promises).then(() => new Promise(resolve => requestAnimationFrame(resolve)));
+    }
+
+    let currentBookId = null, currentBookData = null, sectionDOMRefs = [], lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 };
+    let saveTimer = null, isRestoring = false, scrollRAF = null, lastScroll = -1, bookStyleElement = null;
+    let optionsVisible = false, globalCharMapping = null, headerClickHandler = null;
+
+    const FONT_SIZES = [0.9, 1.05, 1.2, 1.4, 1.6];
+    const SPEED_VALUES = [0.75, 1.0, 1.5, 2.0];
+    let currentFontSizeIndex = 1;
+    let currentSpeedIndex = 3;
+
+    try {
+        const savedFont = localStorage.getItem('reader_font_size_index');
+        if (savedFont !== null) currentFontSizeIndex = parseInt(savedFont);
+        const savedSpeed = localStorage.getItem('reader_tts_speed_index');
+        if (savedSpeed !== null) currentSpeedIndex = parseInt(savedSpeed);
+    } catch(e) {}
+
+    function applyFontSizeToDocument() {
+        document.documentElement.style.fontSize = (FONT_SIZES[currentFontSizeIndex] * 100) + '%';
+    }
+
+    function updateSpeedButton() {
+        const $btnTTSSpeed = document.getElementById('btn-tts-speed');
+        if ($btnTTSSpeed) $btnTTSSpeed.textContent = SPEED_VALUES[currentSpeedIndex] + 'x';
+    }
+
+    if (window.setVelocidadTTS) {
+        window.setVelocidadTTS(SPEED_VALUES[currentSpeedIndex]);
+    }
+    applyFontSizeToDocument();
+
+    const $btnFontSize = document.getElementById('btn-font-size');
+    const $btnTTSSpeed = document.getElementById('btn-tts-speed');
+    if ($btnFontSize) {
+        $btnFontSize.addEventListener('click', () => {
+            currentFontSizeIndex = (currentFontSizeIndex + 1) % FONT_SIZES.length;
+            applyFontSizeToDocument();
+            try { localStorage.setItem('reader_font_size_index', currentFontSizeIndex); } catch(e) {}
+        });
+    }
+    if ($btnTTSSpeed) {
+        $btnTTSSpeed.addEventListener('click', () => {
+            currentSpeedIndex = (currentSpeedIndex + 1) % SPEED_VALUES.length;
+            updateSpeedButton();
+            if (window.setVelocidadTTS) window.setVelocidadTTS(SPEED_VALUES[currentSpeedIndex]);
+            try { localStorage.setItem('reader_tts_speed_index', currentSpeedIndex); } catch(e) {}
+        });
+    }
+
+    function renderChapterMarkers() { if (!currentBookData?.structure?.sections || !currentBookData.structure.totalPages) return; const totalPages = currentBookData.structure.totalPages, sections = currentBookData.structure.sections; $chapterMarkers.innerHTML = ''; sections.forEach(sec => { if (sec.globalStartPage === 0) return; const leftPercent = (sec.globalStartPage / totalPages) * 100; const marker = document.createElement('div'); marker.className = 'chapter-marker-item'; marker.style.left = leftPercent + '%'; $chapterMarkers.appendChild(marker); }); }
+
+    function getCurrentHeadingText(scrollTop) {
+        const container = $readerContainer; if (!container) return null;
+        const headings = container.querySelectorAll('.book-content h1, .book-content h2, .book-content h3, .book-content h4');
+        let current = null; const containerRect = container.getBoundingClientRect();
+        headings.forEach(h => { const rect = h.getBoundingClientRect(); const top = rect.top - containerRect.top + container.scrollTop; if (top <= scrollTop + 10) { current = h.textContent.trim(); } });
+        return current;
+    }
+
+    function openBookForReading(bookId) {
+        if (saveTimer) clearTimeout(saveTimer); if (scrollRAF) cancelAnimationFrame(scrollRAF); cleanupScrollDetection(); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; }
+        $readerContainer.innerHTML = ''; sectionDOMRefs = []; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; lastScroll = -1; currentBookId = bookId; optionsVisible = false; $optionsPanel.classList.remove('visible'); $searchInput.value = ''; $clearSearchBtn.classList.remove('visible');
+        $backLinkBtn.classList.remove('show'); lastLinkScroll = null;
+
+        dbGetBook(bookId).then(bookData => {
+            if (!bookData?.structure?.sections) { alert('El libro no tiene estructura válida.'); return; }
+            currentBookData = bookData; globalCharMapping = []; let charCounter = 0;
+            bookData.structure.sections.forEach(sec => {
+                const pages = splitIntoPages(sec.htmlContent ? stripHtml(sec.htmlContent) : '', 2000);
+                pages.forEach((page, pIdx) => {
+                    globalCharMapping.push({ start: charCounter, end: charCounter + page.length, globalPage: sec.globalStartPage + pIdx + 1 });
+                    charCounter += page.length;
+                });
+            });
+            $libraryScreen.classList.add('hidden'); $readerScreen.classList.remove('hidden');
+            $headerChapterTitle.textContent = '--'; $indPagesLeftChapter.textContent = '--'; $infoPercent.textContent = '--'; $infoPagesLeft.textContent = '--'; $infoCenter.textContent = '--'; $progressBarFill.style.width = '0%'; renderChapterMarkers();
+            if (bookData.structure.bookStyles) { bookStyleElement = document.createElement('style'); bookStyleElement.textContent = `#reader-container .book-content { ${bookData.structure.bookStyles} }`; document.head.appendChild(bookStyleElement); }
+            let fullHTML = '<div class="book-content">';
+            bookData.structure.sections.forEach((sec, idx) => { fullHTML += `<div class="chapter-marker" data-chapter-index="${idx}" style="height:0;"></div>`; fullHTML += sec.htmlContent || `<p>${escapeHtml(sec.title || '')}</p>`; });
+            fullHTML += '</div>'; $readerContainer.innerHTML = fullHTML;
+
+            applyFontSizeToDocument();
+            updateSpeedButton();
+
+            const bookContent = $readerContainer.querySelector('.book-content');
+            if (bookContent) {
+                const hrs = bookContent.querySelectorAll('hr'); hrs.forEach(hr => { const separator = document.createElement('div'); separator.className = 'chapter-separator'; hr.parentNode.replaceChild(separator, hr); });
+                const markers = bookContent.querySelectorAll('.chapter-marker'); markers.forEach((marker, index) => { if (index > 0) { const separator = document.createElement('div'); separator.className = 'chapter-separator'; marker.parentNode.insertBefore(separator, marker); } });
+            }
+
+            $readerContainer.addEventListener('click', e => {
+                const link = e.target.closest('a');
+                if (!link) return;
+                const href = link.getAttribute('href');
+                if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+                    if (!link.getAttribute('target')) link.setAttribute('target', '_blank');
+                    return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                lastLinkScroll = $readerContainer.scrollTop;
+                $backLinkBtn.classList.add('show');
+                if (href && href.startsWith('#') && href.length > 1) {
+                    const id = href.substring(1);
+                    const target = document.getElementById(id) || $readerContainer.querySelector(`[name="${id}"]`);
+                    if (target) {
+                        const rect = target.getBoundingClientRect();
+                        const containerRect = $readerContainer.getBoundingClientRect();
+                        const top = rect.top - containerRect.top + $readerContainer.scrollTop;
+                        $readerContainer.scrollTo({ top, behavior:'smooth' });
+                        return;
+                    }
+                }
+                const chapterLink = link.getAttribute('data-chapter-link');
+                if (chapterLink !== null) {
+                    const targetIndex = parseInt(chapterLink, 10);
+                    const markers = $readerContainer.querySelectorAll('.chapter-marker');
+                    if (markers[targetIndex]) {
+                        const markerRect = markers[targetIndex].getBoundingClientRect();
+                        const containerRect = $readerContainer.getBoundingClientRect();
+                        const top = markerRect.top - containerRect.top + $readerContainer.scrollTop;
+                        $readerContainer.scrollTo({ top, behavior:'smooth' });
+                    }
+                }
+            });
+
+            $backLinkBtn.addEventListener('click', () => {
+                if (lastLinkScroll !== null) {
+                    $readerContainer.scrollTo({ top: lastLinkScroll, behavior:'smooth' });
+                    lastLinkScroll = null;
+                }
+                $backLinkBtn.classList.remove('show');
+            });
+            $readerContainer.addEventListener('click', (e) => {
+                if (e.target.closest('a')) return;
+                if ($backLinkBtn.classList.contains('show')) $backLinkBtn.classList.remove('show');
+            });
+
+            history.pushState({ screen:'reader', bookId }, '', '#reader-'+bookId);
+
+            waitForImages($readerContainer).then(() => {
+                measureSectionPositions();
+                dbGetProgress(bookId).then(progress => { 
+                    if (progress && progress.globalPage > 0) { 
+                        isRestoring = true; 
+                        restoreScrollPosition(progress); 
+                    } else {
+                        updatePositionFromScroll();
+                    }
+                }); 
+                setupScrollDetection();
+            });
+        }).catch(err => { console.error('Error al abrir libro:', err); alert('Error al cargar el libro.'); });
+    }
+
+    function getGlobalPageFromCharIndex(charIndex) { if (!globalCharMapping) return { globalPage:1, percent:0 }; const total = currentBookData.structure.totalPages || 1; for (const map of globalCharMapping) { if (charIndex >= map.start && charIndex < map.end) return { globalPage: map.globalPage, percent: Math.round((map.globalPage/total)*100) }; } return { globalPage:1, percent:0 }; }
+
+    function measureSectionPositions() { if (!currentBookData?.structure?.sections) return; sectionDOMRefs = []; const markers = $readerContainer.querySelectorAll('.chapter-marker'); markers.forEach(marker => { const idx = parseInt(marker.dataset.chapterIndex,10); const rect = marker.getBoundingClientRect(); const containerRect = $readerContainer.getBoundingClientRect(); const top = rect.top - containerRect.top + $readerContainer.scrollTop; let nextMarker = marker.nextElementSibling; while (nextMarker && !nextMarker.classList.contains('chapter-marker')) nextMarker = nextMarker.nextElementSibling; let height; if (nextMarker) { const nextRect = nextMarker.getBoundingClientRect(); height = (nextRect.top - containerRect.top + $readerContainer.scrollTop) - top; } else height = $readerContainer.scrollHeight - top; sectionDOMRefs.push({ index: idx, offsetTop: top, height: Math.max(height,100) }); }); if (sectionDOMRefs.length === 0 && currentBookData.structure.sections.length > 0) sectionDOMRefs.push({ index:0, offsetTop:0, height: $readerContainer.scrollHeight }); }
+
+    function findCurrentSection(scrollTop) { const container = $readerContainer; const clientHeight = container.clientHeight; const triggerY = clientHeight * 0.33; for (let i = sectionDOMRefs.length-1; i>=0; i--) { if (scrollTop >= sectionDOMRefs[i].offsetTop - triggerY) return sectionDOMRefs[i]; } return sectionDOMRefs[0] || null; }
+
+    function updatePositionFromScroll() { if (!currentBookData?.structure?.sections || isRestoring) return; const container = $readerContainer; const st = container.scrollTop; const sh = container.scrollHeight; const ch = container.clientHeight; if (sh <= ch) { updateIndicators(1,0,1); return; } const sec = findCurrentSection(st); if (!sec) return; const idx = sec.index; const sections = currentBookData.structure.sections; if (idx >= sections.length) return; const sData = sections[idx]; const start = sec.offsetTop; const height = sec.height || 1; const progress = Math.max(0, Math.min(1, (st-start)/height)); const pageInChapter = Math.min(Math.floor(progress*sData.pageCount)+1, sData.pageCount||1); const globalPage = sData.globalStartPage + pageInChapter; updateIndicators(Math.max(1, Math.min(globalPage, currentBookData.structure.totalPages||1)), idx, Math.max(1, pageInChapter)); const totalPages = currentBookData.structure.totalPages||1; const percent = Math.round((globalPage/totalPages)*100); $progressBarFill.style.width = percent+'%'; }
+
+    function flashProgress() { $readerHeader.classList.add('progress-flash'); setTimeout(() => $readerHeader.classList.remove('progress-flash'), 150); }
+
+    function updateIndicators(gPage, chIdx, chPage) {
+        const s = currentBookData?.structure; if (!s) return;
+        const sec = s.sections[chIdx]; if (!sec) return;
+        const chTotal = sec.pageCount||1; const totalPages = s.totalPages||1;
+        const prevGlobalPage = lastRawData.globalPage;
+        if (gPage === lastRawData.globalPage && chIdx === lastRawData.chapterIdx && chPage === lastRawData.chapterPage) return;
+        lastRawData = { globalPage: gPage, chapterIdx: chIdx, chapterPage: chPage };
+        const pagesLeftChapter = Math.max(1, chTotal - chPage + 1);
+        const percent = Math.round((gPage/totalPages)*100);
+        const pagesLeftBook = Math.max(0, totalPages - gPage);
+        const totalWords = s.totalWords||0; const wordsRemaining = Math.floor(totalWords * (1 - percent/100));
+        const totalMinutes = Math.ceil(wordsRemaining/285); let timeText = '--';
+        if (totalMinutes > 0) { if (totalMinutes >= 60) { const hours = Math.floor(totalMinutes/60); const mins = totalMinutes%60; timeText = `${hours} h ${mins} m`; } else { timeText = `${totalMinutes} m`; } }
+        $indPagesLeftChapter.textContent = pagesLeftChapter; $infoPercent.textContent = percent+'%'; $infoPagesLeft.textContent = pagesLeftBook;
+        const st = $readerContainer.scrollTop; const headingText = getCurrentHeadingText(st);
+        $headerChapterTitle.textContent = headingText || sec.title || '--';
+        $infoCenter.textContent = timeText;
+        scheduleProgressSave(gPage, chIdx, chPage);
+        if (gPage !== prevGlobalPage) { flashProgress(); }
+    }
+
+    function scheduleProgressSave(gPage, chIdx, chPage) { clearTimeout(saveTimer); saveTimer = setTimeout(async () => { if (!currentBookId) return; const top = $readerContainer.scrollTop; await dbSaveProgress(currentBookId, { globalPage: gPage, spineIndex: chIdx, pageInChapter: chPage, scrollTop: top, totalPages: currentBookData?.structure?.totalPages || 0 }); try { localStorage.setItem('last_progress_v91_'+currentBookId, JSON.stringify({ gPage, chIdx, chPage, top, ts: Date.now() })); } catch(e) {} }, 1000); }
+
+    function toggleOptionsPanel() { optionsVisible = !optionsVisible; $optionsPanel.classList.toggle('visible', optionsVisible); }
+
+    function setupScrollDetection() { const container = $readerContainer; const scrollHandler = () => { if (scrollRAF) return; scrollRAF = requestAnimationFrame(() => { scrollRAF = null; const st = container.scrollTop; if (Math.abs(st-lastScroll) > 2) { lastScroll = st; if (!isRestoring) updatePositionFromScroll(); } }); }; container.addEventListener('scroll', scrollHandler, { passive: true }); container._scrollHandler = scrollHandler; if (headerClickHandler) $readerHeader.removeEventListener('click', headerClickHandler); headerClickHandler = (e) => { e.stopPropagation(); toggleOptionsPanel(); }; $readerHeader.addEventListener('click', headerClickHandler); window.addEventListener('resize', () => { clearTimeout(window._resizeTimer); window._resizeTimer = setTimeout(() => { measureSectionPositions(); updatePositionFromScroll(); }, 400); }); }
+
+    function cleanupScrollDetection() { const container = $readerContainer; if (container._scrollHandler) { container.removeEventListener('scroll', container._scrollHandler); container._scrollHandler = null; } if (headerClickHandler) { $readerHeader.removeEventListener('click', headerClickHandler); headerClickHandler = null; } if (scrollRAF) cancelAnimationFrame(scrollRAF); clearTimeout(saveTimer); clearTimeout(window._resizeTimer); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; } }
+
+    async function restoreScrollPosition(progress) { await new Promise(r => setTimeout(r, 400)); measureSectionPositions(); const container = $readerContainer; const sh = container.scrollHeight; const ch = container.clientHeight; if (typeof progress.scrollTop === 'number' && progress.scrollTop > 0 && progress.scrollTop < sh) container.scrollTop = progress.scrollTop; else container.scrollTop = Math.max(0, (progress.globalPage/(progress.totalPages||1))*(sh-ch)); setTimeout(() => { if (container.scrollTop < 5 && progress.scrollTop > 100) container.scrollTop = progress.scrollTop; isRestoring = false; measureSectionPositions(); updatePositionFromScroll(); }, 400); }
+
+    function closeReader() { if (isClosingReader) return; isClosingReader = true; cleanupScrollDetection(); $readerContainer.innerHTML = ''; sectionDOMRefs = []; currentBookId = null; currentBookData = null; globalCharMapping = null; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; $readerScreen.classList.add('hidden'); $libraryScreen.classList.remove('hidden'); if (history.state && history.state.screen === 'reader') history.back(); exitFullscreen(); renderLibrary(); setTimeout(() => { isClosingReader = false; }, 300); }
+
+    window.addEventListener('popstate', e => { if (e.state && e.state.screen === 'reader') closeReader(); });
+
+    function escapeRegExp(string) { return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+    function highlightTemporary(node, start, length) { const range = document.createRange(); range.setStart(node, Math.min(start, node.textContent.length)); range.setEnd(node, Math.min(start+length, node.textContent.length)); const span = document.createElement('span'); span.className = 'temp-highlight'; try { range.surroundContents(span); } catch(e) { return; } setTimeout(() => { span.style.backgroundColor = 'transparent'; }, 600); setTimeout(() => { if (span.parentNode) { const parent = span.parentNode; while (span.firstChild) parent.insertBefore(span.firstChild, span); parent.removeChild(span); parent.normalize(); } }, 1200); }
+
+    function performSearch(term) { if (!term || term.length < 2) { $searchResultsList.innerHTML = '<p style="text-align:center;color:#999;">Introduce al menos 2 caracteres</p>'; return; } const text = $readerContainer.textContent || ''; const regex = new RegExp(escapeRegExp(term), 'gi'); const matches = []; let match; while ((match = regex.exec(text)) !== null) { const charIndex = match.index; const { globalPage, percent } = getGlobalPageFromCharIndex(charIndex); const start = Math.max(0, charIndex-40); const end = Math.min(text.length, charIndex+term.length+40); let context = text.substring(start, end); if (start > 0) context = '…'+context; if (end < text.length) context += '…'; matches.push({ charIndex, context, globalPage, percent, term }); if (matches.length >= 50) break; } if (matches.length === 0) { $searchResultsList.innerHTML = '<p style="text-align:center;color:#999;">Sin resultados</p>'; return; } let html = ''; matches.forEach(m => { const highlightedContext = m.context.replace(new RegExp(escapeRegExp(m.term), 'gi'), `<span class="highlight">$&</span>`); html += `<div class="search-result-item" data-position="${m.charIndex}" data-term="${escapeHtml(m.term)}"><div>${highlightedContext}</div><div class="meta">Pág. ${m.globalPage} · ${m.percent}%</div></div>`; }); $searchResultsList.innerHTML = html; document.querySelectorAll('.search-result-item').forEach(item => { item.addEventListener('click', function() { const pos = parseInt(this.dataset.position); const term = this.dataset.term; const walker = document.createTreeWalker($readerContainer, NodeFilter.SHOW_TEXT, null, false); let currentPos = 0, targetNode = null, offset = 0; while (walker.nextNode()) { const node = walker.currentNode; const len = node.textContent.length; if (currentPos + len > pos) { targetNode = node; offset = pos - currentPos; break; } currentPos += len; } if (targetNode) { const containerRect = $readerContainer.getBoundingClientRect(); const range = document.createRange(); range.setStart(targetNode, Math.min(offset, targetNode.textContent.length)); range.collapse(true); const rect = range.getClientRects()[0]; if (rect) { const scrollTop = rect.top - containerRect.top + $readerContainer.scrollTop - 100; $readerContainer.scrollTo({ top: scrollTop, behavior:'smooth' }); setTimeout(() => { highlightTemporary(targetNode, offset, term.length); }, 600); } } $searchResultsOverlay.classList.remove('active'); hideOptionsPanel(); }); }); }
+
+    $btnSearchResults.addEventListener('click', () => { const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); });
+    $searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') { const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); } });
+    $searchResultsOverlay.addEventListener('click', e => { if (e.target === $searchResultsOverlay) $searchResultsOverlay.classList.remove('active'); });
+
+    function buildFlatIndex() {
+        const container = $readerContainer;
+        if (!container || !currentBookData) return [];
+
+        const allMarkers = container.querySelectorAll('.chapter-marker');
+        const headings = container.querySelectorAll('.book-content h1, .book-content h2, .book-content h3, .book-content h4');
+        const items = [];
+
+        headings.forEach(h => {
+            const rect = h.getBoundingClientRect();
+            const top = rect.top - container.getBoundingClientRect().top + container.scrollTop;
+            const level = parseInt(h.tagName.substring(1));
+
+            let rawTitle = h.textContent.trim();
+            let displayTitle = rawTitle;
+            for (const fmTitle of FRONT_MATTER_TITLES) {
+                if (rawTitle.includes(fmTitle) && rawTitle.length > fmTitle.length + 5) {
+                    displayTitle = fmTitle;
+                    break;
+                }
+            }
+            displayTitle = separateNumberFromTitle(displayTitle);
+
+            let sectionIndex = -1;
+            let markerBefore = null;
+            for (const marker of allMarkers) {
+                if (marker.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING) {
+                    markerBefore = marker;
+                } else {
+                    break;
+                }
+            }
+            if (markerBefore) {
+                sectionIndex = parseInt(markerBefore.dataset.chapterIndex, 10);
+            } else {
+                sectionIndex = 0;
+            }
+
+            let globalPage = 1;
+            if (sectionIndex >= 0 && currentBookData.structure.sections[sectionIndex]) {
+                const sec = currentBookData.structure.sections[sectionIndex];
+                const markerRect = markerBefore ? markerBefore.getBoundingClientRect() : { top: 0 };
+                const markerTop = markerRect.top - container.getBoundingClientRect().top + container.scrollTop;
+                const relativeOffset = Math.max(0, top - markerTop);
+                const sectionHeight = container.scrollHeight - markerTop;
+                const progress = sectionHeight > 0 ? relativeOffset / sectionHeight : 0;
+                const pageInChapter = Math.min(Math.floor(progress * sec.pageCount) + 1, sec.pageCount || 1);
+                globalPage = sec.globalStartPage + pageInChapter;
+            }
+
+            const totalPages = currentBookData?.structure?.totalPages || 1;
+            const percent = Math.round((globalPage / totalPages) * 100);
+
+            items.push({ title: displayTitle, level, top, globalPage, percent, sectionIndex });
+        });
+
+        return items;
+    }
+
+    function renderFlatIndex(items, containerEl) {
+        const st = $readerContainer.scrollTop;
+        const ch = $readerContainer.clientHeight;
+        const threshold = st + ch * 0.4;
+        const currentSection = findCurrentSection(st);
+        const currentChapterIdx = currentSection ? currentSection.index : -1;
+
+        let currentIdx = -1;
+
+        if (currentChapterIdx >= 0) {
+            const sectionItems = items.filter(item => item.sectionIndex === currentChapterIdx);
+            if (sectionItems.length > 0) {
+                let bestItem = null;
+                for (const item of sectionItems) {
+                    if (item.top <= threshold) {
+                        bestItem = item;
+                    }
+                }
+                if (!bestItem) {
+                    bestItem = sectionItems[0];
+                }
+                currentIdx = items.indexOf(bestItem);
+            }
+        }
+
+        if (currentIdx === -1) {
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].top <= threshold) currentIdx = i;
+            }
+        }
+
+        containerEl.innerHTML = '';
+        let currentElement = null;
+        items.forEach((item, idx) => {
+            const div = document.createElement('div');
+            const styleLevel = item.level - 1;
+            div.className = `chapter-item level-${Math.min(styleLevel, 3)}`;
+            if (idx === currentIdx) {
+                div.classList.add('current-chapter-bg');
+                currentElement = div;
+            }
+            if (FRONT_MATTER_TITLES.includes(item.title)) {
+                div.classList.add('front-matter-item');
+            }
+            div.innerHTML = `<span class="chapter-title">${escapeHtml(item.title)}</span><span class="chapter-page"><span>${item.globalPage}</span><span style="margin-left:12px;">${item.percent}%</span></span>`;
+            div.addEventListener('click', () => {
+                const targetScroll = item.top - $readerContainer.clientHeight * 0.40;
+                $readerContainer.scrollTo({ top: Math.max(0, targetScroll), behavior:'smooth' });
+                $chaptersOverlay.classList.remove('active');
+                hideOptionsPanel();
+            });
+            containerEl.appendChild(div);
+        });
+
+        if (currentElement) {
+            setTimeout(() => {
+                currentElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }, 100);
+        }
+    }
+
+    $btnChapters.addEventListener('click', () => {
+        measureSectionPositions();
+        const items = buildFlatIndex();
+        if (items.length === 0) {
+            $chaptersList.innerHTML = '<p style="text-align:center;color:#999;">Sin capítulos</p>';
+        } else {
+            renderFlatIndex(items, $chaptersList);
+        }
+        $chaptersOverlay.classList.add('active');
+    });
+    $chaptersOverlay.addEventListener('click', e => { if (e.target === $chaptersOverlay) $chaptersOverlay.classList.remove('active'); });
+
+    function autoResizeTextarea() { const textarea = $bookmarkNote; textarea.style.height = 'auto'; textarea.style.height = (textarea.scrollHeight) + 'px'; }
+
+    async function renderBookmarks() { if (!currentBookId) return; const bookmarks = await dbGetBookmarks(currentBookId); $bookmarksList.innerHTML = ''; if (bookmarks.length === 0) { $bookmarksList.innerHTML = '<p style="text-align:center;color:#999;">No hay marcadores</p>'; return; } const table = document.createElement('table'); table.className = 'bookmark-table'; bookmarks.forEach(bm => { const row = table.insertRow(); const cellPage = row.insertCell(); cellPage.textContent = `Pág. ${bm.globalPage}`; cellPage.className = 'bm-page'; const cellNote = row.insertCell(); cellNote.textContent = bm.note || ''; cellNote.className = bm.note ? 'bm-note' : ''; if (!bm.note) cellNote.style.color = '#aaa'; const cellActions = row.insertCell(); cellActions.className = 'bm-actions'; const actionBtn = document.createElement('button'); const isEditing = (editingBookmarkId === bm.id); actionBtn.innerHTML = isEditing ? '×' : '✎'; actionBtn.title = isEditing ? 'Eliminar marcador' : 'Editar nota'; actionBtn.addEventListener('click', async e => { e.stopPropagation(); if (isEditing) { await dbDeleteBookmark(bm.id); editingBookmarkId = null; $bookmarkForm.style.display = 'none'; autoResizeTextarea(); } else { editingBookmarkId = bm.id; $bookmarkNote.value = bm.note || ''; $clearNoteBtn.classList.toggle('visible', bm.note && bm.note.length > 0); autoResizeTextarea(); $bookmarkForm.style.display = 'flex'; $bookmarkNote.focus(); } renderBookmarks(); }); cellActions.appendChild(actionBtn); row.addEventListener('click', () => { const totalPages = currentBookData?.structure?.totalPages || 1; const scrollTarget = (bm.globalPage / totalPages) * $readerContainer.scrollHeight; $readerContainer.scrollTo({ top: scrollTarget, behavior:'smooth' }); $bookmarksOverlay.classList.remove('active'); hideOptionsPanel(); }); }); $bookmarksList.appendChild(table); }
+
+    $btnBookmarks.addEventListener('click', () => { editingBookmarkId = null; $bookmarkForm.style.display = 'none'; renderBookmarks(); $bookmarksOverlay.classList.add('active'); });
+    $btnAddBookmark.addEventListener('click', () => { editingBookmarkId = null; $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkForm.style.display = 'flex'; $bookmarkNote.focus(); renderBookmarks(); });
+    $btnCancelBookmark.addEventListener('click', () => { editingBookmarkId = null; $bookmarkForm.style.display = 'none'; $bookmarkNote.value = ''; autoResizeTextarea(); renderBookmarks(); });
+    $btnSaveBookmark.addEventListener('click', async () => { const note = $bookmarkNote.value.trim(); if (editingBookmarkId) { await dbUpdateBookmark(editingBookmarkId, note); editingBookmarkId = null; } else { const globalPage = lastRawData.globalPage > 0 ? lastRawData.globalPage : 1; await dbAddBookmark({ bookId: currentBookId, globalPage, note }); } $bookmarkForm.style.display = 'none'; $bookmarkNote.value = ''; autoResizeTextarea(); renderBookmarks(); });
+    $bookmarksOverlay.addEventListener('click', e => { if (e.target === $bookmarksOverlay) { $bookmarksOverlay.classList.remove('active'); $bookmarkForm.style.display = 'none'; editingBookmarkId = null; renderBookmarks(); } });
+
+    $btnFullscreen.addEventListener('click', (e) => { e.stopPropagation(); toggleFullscreen(); });
+    $btnBackLibrary.addEventListener('click', () => { if (saveTimer) { clearTimeout(saveTimer); if (lastRawData.globalPage > 0 && currentBookId) dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } closeReader(); });
+
+    $uploadFab.addEventListener('click', () => { setTimeout(() => $fileInput.click(), 0); });
+    $fileInput.addEventListener('change', async e => { const file = e.target.files[0]; if (!file) return; if (!file.name.toLowerCase().endsWith('.epub')) { alert('Solo archivos .epub'); $fileInput.value = ''; return; } const book = await uploadAndProcessBook(file); $fileInput.value = ''; if (book) renderLibrary(); });
+    document.addEventListener('dragover', e => e.preventDefault());
+    document.addEventListener('drop', async e => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file && file.name.endsWith('.epub')) { const book = await uploadAndProcessBook(file); if (book) renderLibrary(); } });
+    window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage > 0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } });
+
+    (async () => { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader v91 + TTS listo'); })();
 })();
 </script>
 </body>
