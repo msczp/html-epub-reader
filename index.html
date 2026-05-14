@@ -352,7 +352,7 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="scroll-speed-toast"></div>
 
-<!-- ========== TTS + AUTO‑SCROLL SUAVE ========== -->
+<!-- ========== TTS + AUTO‑SCROLL (con corrección de scroll inicial) ========== -->
 <script>
 (function() {
     'use strict';
@@ -378,11 +378,12 @@
     const BASE_CHARS_PER_SEC = 12.5;
     const CORRECCION_VELOCIDAD = 1.0;
 
-    // Auto‑scroll con acumulador de subpíxel
     const SCROLL_AUTO_DEFAULT_SPEED = 20;
     const SCROLL_SPEED_STEP = 1;
     const SCROLL_SPEED_MIN = 1;
     const SCROLL_SPEED_MAX = 120;
+    const SCROLL_PORCENTAJE = 0.42;
+    const SCROLL_TOLERANCIA = 5;
     const MANUAL_SCROLL_RESUME_DELAY = 200;
 
     let autoScrollSpeed = SCROLL_AUTO_DEFAULT_SPEED;
@@ -391,9 +392,8 @@
     let autoScrollLastTime = 0;
     let manualScrolling = false;
     let resumeTimer = null;
-    let scrollAccum = 0;           // acumulador fraccional
+    let scrollAccum = 0;
 
-    // Gestos táctiles
     let twoFingerActive = false;
     let twoFingerStartY = 0;
     let didMove = false;
@@ -476,7 +476,7 @@
     }
 
     function setScrollTop(value) {
-        const clamped = Math.max(0, Math.floor(value)); // forzamos entero para el navegador
+        const clamped = Math.max(0, Math.floor(value));
         if (scrollContainer === window) {
             window.scrollTo(0, clamped);
         } else {
@@ -484,11 +484,70 @@
         }
     }
 
-    // Auto‑scroll con acumulador
+    function getCharPosition(elem, charIndex) {
+        const walker = document.createTreeWalker(elem, NodeFilter.SHOW_TEXT, null, false);
+        let current = 0;
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            const length = node.textContent.length;
+            if (current + length > charIndex) {
+                const offset = charIndex - current;
+                const range = document.createRange();
+                range.setStart(node, offset);
+                range.setEnd(node, Math.min(offset + 1, length));
+                const rect = range.getClientRects()[0];
+                if (rect) return { top: rect.top, left: rect.left };
+                return null;
+            }
+            current += length;
+        }
+        return null;
+    }
+
+    function scrollElementoAlPorcentaje(elem, porcentaje) {
+        if (!elem) return;
+        const container = document.querySelector(CONTENEDOR);
+        if (!container) return;
+        const cs = getComputedStyle(container);
+        const pTop = parseFloat(cs.paddingTop) || 0;
+        const contHeight = container.clientHeight;
+        const contRect = container.getBoundingClientRect();
+        const contentHeight = contHeight - pTop;
+        const desiredTop = contRect.top + pTop + contentHeight * porcentaje;
+
+        const textNode = elem.firstChild;
+        let firstCharTop;
+        if (textNode && textNode.nodeType === Node.TEXT_NODE && textNode.length > 0) {
+            const range = document.createRange();
+            range.setStart(textNode, 0);
+            range.setEnd(textNode, 1);
+            const rect = range.getClientRects()[0];
+            firstCharTop = rect ? rect.top : elem.getBoundingClientRect().top;
+        } else {
+            firstCharTop = elem.getBoundingClientRect().top;
+        }
+
+        const currentScroll = getScrollTop();
+        let targetScroll;
+        if (scrollContainer === window) {
+            targetScroll = currentScroll + firstCharTop - desiredTop;
+        } else {
+            const contRect2 = container.getBoundingClientRect();
+            const relativeTop = firstCharTop - contRect2.top;
+            targetScroll = currentScroll + relativeTop - (desiredTop - contRect2.top);
+        }
+        // Animar al punto calculado
+        const start = getScrollTop();
+        const change = targetScroll - start;
+        if (Math.abs(change) < 0.5) return;
+        // Hacer un scroll instantáneo (o animado, pero sin interferir con el auto‑scroll)
+        setScrollTop(targetScroll);
+    }
+
     function startAutoScroll() {
         if (!autoScrollActive || manualScrolling) return;
         stopAutoScroll();
-        scrollAccum = getScrollTop(); // inicializamos con la posición actual exacta
+        scrollAccum = getScrollTop();
         autoScrollLastTime = performance.now();
         function step(now) {
             if (!autoScrollActive || manualScrolling) {
@@ -500,14 +559,11 @@
             const maxScroll = scrollContainer === window
                 ? document.documentElement.scrollHeight - window.innerHeight
                 : scrollContainer.scrollHeight - scrollContainer.clientHeight;
-            // Avance fraccional
             scrollAccum += autoScrollSpeed * elapsed;
-            // No sobrepasar el final
             scrollAccum = Math.min(scrollAccum, maxScroll);
             const intPart = Math.floor(scrollAccum);
             setScrollTop(intPart);
-            scrollAccum -= intPart; // guardamos el resto para el siguiente fotograma
-            // Pequeño ajuste para evitar acumulación infinita al final
+            scrollAccum -= intPart;
             if (intPart >= maxScroll) {
                 scrollAccum = maxScroll;
                 setScrollTop(maxScroll);
@@ -529,7 +585,7 @@
     function pauseAutoScrollForManual() {
         manualScrolling = true;
         stopAutoScroll();
-        scrollAccum = getScrollTop(); // sincronizar al detener
+        scrollAccum = getScrollTop();
     }
 
     function resumeAutoScrollIfNeeded() {
@@ -541,7 +597,6 @@
         }, MANUAL_SCROLL_RESUME_DELAY);
     }
 
-    // Gestión de bloques (sin cambios)
     function obtenerBloques() {
         const contenedor = document.querySelector(CONTENEDOR);
         if (!contenedor) return [];
@@ -661,6 +716,9 @@
         requestWakeLock();
         scrollContainer = obtenerScrollContainer();
 
+        // ---- POSICIONAR LA VISTA EN EL PÁRRAFO ----
+        scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
+
         autoScrollActive = true;
         manualScrolling = false;
         startAutoScroll();
@@ -687,6 +745,23 @@
         leyendo = true;
         requestWakeLock();
         scrollContainer = obtenerScrollContainer();
+
+        // Posicionar en la palabra exacta si es posible
+        const pos = getCharPosition(parrafo, charIndex);
+        if (pos) {
+            const container = document.querySelector(CONTENEDOR);
+            const cs = getComputedStyle(container);
+            const pTop = parseFloat(cs.paddingTop) || 0;
+            const contHeight = container.clientHeight;
+            const contRect = container.getBoundingClientRect();
+            const contentHeight = contHeight - pTop;
+            const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+            const delta = pos.top - desiredTop;
+            const targetScroll = getScrollTop() + delta;
+            setScrollTop(targetScroll);
+        } else {
+            scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
+        }
 
         autoScrollActive = true;
         manualScrolling = false;
