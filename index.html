@@ -352,7 +352,7 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="scroll-speed-toast"></div>
 
-<!-- ========== TTS + AUTO‑SCROLL CONTINUO (mejorado) ========== -->
+<!-- ========== TTS + AUTO‑SCROLL SUAVE ========== -->
 <script>
 (function() {
     'use strict';
@@ -378,7 +378,7 @@
     const BASE_CHARS_PER_SEC = 12.5;
     const CORRECCION_VELOCIDAD = 1.0;
 
-    // Auto‑scroll (paso más fino: 1 px/s, mínimo 1)
+    // Auto‑scroll con acumulador de subpíxel
     const SCROLL_AUTO_DEFAULT_SPEED = 20;
     const SCROLL_SPEED_STEP = 1;
     const SCROLL_SPEED_MIN = 1;
@@ -391,11 +391,12 @@
     let autoScrollLastTime = 0;
     let manualScrolling = false;
     let resumeTimer = null;
+    let scrollAccum = 0;           // acumulador fraccional
 
     // Gestos táctiles
     let twoFingerActive = false;
     let twoFingerStartY = 0;
-    let didMove = false;          // para distinguir tap de scroll
+    let didMove = false;
     let isSingleTouch = false;
 
     let leyendo = false;
@@ -426,7 +427,6 @@
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
 
-    // ========== SUPRESIÓN DEL MENÚ CONTEXTUAL ==========
     document.addEventListener('contextmenu', function(e) {
         const selection = window.getSelection();
         if (!selection || selection.isCollapsed) return;
@@ -449,7 +449,6 @@
     `;
     document.head.appendChild(styleEl);
 
-    // ========== WAKE LOCK ==========
     async function requestWakeLock() {
         if ('wakeLock' in navigator) {
             try {
@@ -462,7 +461,6 @@
         if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     }
 
-    // ========== SCROLL UTILITIES ==========
     function obtenerScrollContainer() {
         const contenedor = document.querySelector(CONTENEDOR);
         if (!contenedor) return window;
@@ -478,17 +476,19 @@
     }
 
     function setScrollTop(value) {
+        const clamped = Math.max(0, Math.floor(value)); // forzamos entero para el navegador
         if (scrollContainer === window) {
-            window.scrollTo(0, value);
+            window.scrollTo(0, clamped);
         } else {
-            scrollContainer.scrollTop = value;
+            scrollContainer.scrollTop = clamped;
         }
     }
 
-    // ========== AUTO‑SCROLL ==========
+    // Auto‑scroll con acumulador
     function startAutoScroll() {
         if (!autoScrollActive || manualScrolling) return;
         stopAutoScroll();
+        scrollAccum = getScrollTop(); // inicializamos con la posición actual exacta
         autoScrollLastTime = performance.now();
         function step(now) {
             if (!autoScrollActive || manualScrolling) {
@@ -497,12 +497,21 @@
             }
             const elapsed = (now - autoScrollLastTime) / 1000;
             autoScrollLastTime = now;
-            const current = getScrollTop();
             const maxScroll = scrollContainer === window
                 ? document.documentElement.scrollHeight - window.innerHeight
                 : scrollContainer.scrollHeight - scrollContainer.clientHeight;
-            const newTop = Math.min(current + autoScrollSpeed * elapsed, maxScroll);
-            setScrollTop(newTop);
+            // Avance fraccional
+            scrollAccum += autoScrollSpeed * elapsed;
+            // No sobrepasar el final
+            scrollAccum = Math.min(scrollAccum, maxScroll);
+            const intPart = Math.floor(scrollAccum);
+            setScrollTop(intPart);
+            scrollAccum -= intPart; // guardamos el resto para el siguiente fotograma
+            // Pequeño ajuste para evitar acumulación infinita al final
+            if (intPart >= maxScroll) {
+                scrollAccum = maxScroll;
+                setScrollTop(maxScroll);
+            }
             autoScrollRAF = requestAnimationFrame(step);
         }
         autoScrollRAF = requestAnimationFrame(step);
@@ -520,6 +529,7 @@
     function pauseAutoScrollForManual() {
         manualScrolling = true;
         stopAutoScroll();
+        scrollAccum = getScrollTop(); // sincronizar al detener
     }
 
     function resumeAutoScrollIfNeeded() {
@@ -531,7 +541,7 @@
         }, MANUAL_SCROLL_RESUME_DELAY);
     }
 
-    // ========== GESTIÓN DE BLOQUES ==========
+    // Gestión de bloques (sin cambios)
     function obtenerBloques() {
         const contenedor = document.querySelector(CONTENEDOR);
         if (!contenedor) return [];
@@ -631,7 +641,6 @@
         }, pausaPrevia + 100);
     }
 
-    // ========== INICIAR / DETENER ==========
     function iniciar(parrafo) {
         ocultarBotonAltavoz();
         limpiarSeleccion();
@@ -714,7 +723,6 @@
         }
     }
 
-    // ========== BOTÓN FLOTANTE ==========
     function crearBotonAltavoz() {
         if (speakerBtn) return;
         speakerBtn = document.createElement('div');
@@ -750,7 +758,6 @@
         selectionData = null;
     }
 
-    // ========== DETECCIÓN DE SELECCIÓN ==========
     function manejarSeleccion() {
         if (leyendo) { ocultarBotonAltavoz(); return; }
         const selection = window.getSelection();
@@ -780,10 +787,8 @@
     document.addEventListener('mousedown', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
     document.addEventListener('touchstart', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
 
-    // ========== GESTOS TÁCTILES Y RATÓN ==========
     const contenedor = document.querySelector(CONTENEDOR);
     if (contenedor) {
-        // touchstart general: resetear didMove y guardar si es un solo dedo
         contenedor.addEventListener('touchstart', function(e) {
             didMove = false;
             isSingleTouch = e.touches.length === 1;
@@ -792,13 +797,13 @@
             } else if (e.touches.length === 2) {
                 twoFingerActive = true;
                 twoFingerStartY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-                pauseAutoScrollForManual(); // pausar también durante ajuste de velocidad
+                pauseAutoScrollForManual();
                 e.preventDefault();
             }
         }, { passive: false });
 
         contenedor.addEventListener('touchmove', function(e) {
-            didMove = true; // hubo movimiento, no es un tap
+            didMove = true;
             if (twoFingerActive && e.touches.length === 2) {
                 const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
                 const deltaY = currentY - twoFingerStartY;
@@ -821,7 +826,6 @@
                 if (twoFingerActive) {
                     twoFingerActive = false;
                 }
-                // Si no hubo movimiento, procesar posible tap
                 if (!didMove && isSingleTouch) {
                     const touch = e.changedTouches[0];
                     const elem = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -846,7 +850,6 @@
                         }
                     }
                 }
-                // Si estábamos en pausa por gesto, reanudar
                 if (manualScrolling) {
                     resumeAutoScrollIfNeeded();
                 }
