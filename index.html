@@ -494,7 +494,7 @@
 })();
 </script>
 
-<!-- ========== TTS + inicio conjunto (con pausa de auto‑scroll al arrastrar) ========== -->
+<!-- ========== TTS + inicio conjunto (con retraso de 300 ms para el scroll) ========== -->
 <script>
 (function() {
     'use strict';
@@ -518,9 +518,10 @@
     const PAUSA_SEPARADOR = 1200;
     const LONGITUD_MINIMA_TEXTO = 1;
     const SCROLL_PORCENTAJE = 0.42;
+    const SCROLL_DELAY = 300; // retardo para iniciar el scroll junto con la voz
 
     let leyendo = false;
-    window.leyendo = false; // exponer para otras partes
+    window.leyendo = false;
     let utterance = null;
     let bloques = [];
     let indiceBloque = -1;
@@ -533,6 +534,8 @@
     let selectionData = null;
     let didMove = false;
 
+    // Timer para iniciar el auto‑scroll después de un retardo
+    let scrollStartTimer = null;
     // Timer para reanudar auto‑scroll después de arrastre
     let autoResumeTimer = null;
 
@@ -732,10 +735,15 @@
         // Posicionar el párrafo al 42%
         scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
 
-        // Iniciar scroll automático
-        if (window.startScroll) window.startScroll();
-
+        // Iniciar TTS inmediatamente
         procesarSiguienteBloque();
+
+        // Programar el inicio del auto‑scroll con un retardo para que coincida con la voz
+        clearTimeout(scrollStartTimer);
+        scrollStartTimer = setTimeout(() => {
+            if (leyendo && window.startScroll) window.startScroll();
+            scrollStartTimer = null;
+        }, SCROLL_DELAY);
     }
 
     function iniciarDesdeSeleccion(parrafo, charIndex) {
@@ -780,14 +788,20 @@
             scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
         }
 
-        if (window.startScroll) window.startScroll();
-
+        // Iniciar TTS
         leerBloque(idx, (exito) => {
             if (exito) {
                 indiceBloque = idx;
                 procesarSiguienteBloque();
             }
         }, charIndex);
+
+        // Programar inicio del auto‑scroll con retardo
+        clearTimeout(scrollStartTimer);
+        scrollStartTimer = setTimeout(() => {
+            if (leyendo && window.startScroll) window.startScroll();
+            scrollStartTimer = null;
+        }, SCROLL_DELAY);
     }
 
     function detener() {
@@ -801,6 +815,10 @@
         bloques = [];
         indiceBloque = -1;
         releaseWakeLock();
+
+        // Cancelar el temporizador de inicio del scroll si aún no se ha ejecutado
+        clearTimeout(scrollStartTimer);
+        scrollStartTimer = null;
 
         // Parar también el scroll
         if (window.stopAutoScrollPermanently) window.stopAutoScrollPermanently();
@@ -1361,7 +1379,6 @@
 
             applyFontSizeToDocument();
             updateSpeedButton();
-            // Actualizar botón de velocidad de scroll
             const $btnScrollSpeed = document.getElementById('btn-scroll-speed');
             if ($btnScrollSpeed && window.getScrollSpeedValue) {
                 const val = window.getScrollSpeedValue();
