@@ -285,6 +285,26 @@
         .processing-card .spinner { width: 40px; height: 40px; border: 3px solid #eee; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .processing-card .msg { font-size: 0.95rem; color: #333; line-height: 1.4; padding: 0 4px; }
+
+        /* Indicador del auto‑scroll */
+        #pixel-scroll-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(0,0,0,0.75);
+            color: white;
+            padding: 8px 18px;
+            border-radius: 30px;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 20px;
+            font-weight: bold;
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.25s;
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        #pixel-scroll-indicator.visible { opacity: 1; }
     </style>
 </head>
 <body>
@@ -344,7 +364,10 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS (sin auto‑scroll, corregido: no se para al hacer scroll) ========== -->
+<!-- Indicador de velocidad del auto‑scroll -->
+<div id="pixel-scroll-indicator"></div>
+
+<!-- ========== TTS (sin auto‑scroll, gestos independientes) ========== -->
 <script>
 (function() {
     'use strict';
@@ -375,7 +398,6 @@
     let timeoutSig = null;
     let ultimoToque = 0;
     let toqueTimer = null;
-    let scrollContainer = null;
     let wakeLock = null;
 
     let speakerBtn = null;
@@ -419,12 +441,6 @@
     }
     function releaseWakeLock() {
         if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
-    }
-
-    function obtenerScrollContainer() {
-        const contenedor = document.querySelector(CONTENEDOR);
-        if (!contenedor) return window;
-        return contenedor;
     }
 
     function obtenerBloques() {
@@ -544,7 +560,6 @@
         indiceBloque = idx - 1;
         leyendo = true;
         requestWakeLock();
-        scrollContainer = obtenerScrollContainer();
         procesarSiguienteBloque();
     }
 
@@ -566,7 +581,6 @@
         indiceBloque = idx;
         leyendo = true;
         requestWakeLock();
-        scrollContainer = obtenerScrollContainer();
 
         leerBloque(idx, (exito) => {
             if (exito) {
@@ -661,39 +675,36 @@
 
     const contenedor = document.querySelector(CONTENEDOR);
     if (contenedor) {
-        // Reiniciar bandera de movimiento en cada nuevo toque
         contenedor.addEventListener('touchstart', function(e) {
             didMove = false;
         }, { passive: true });
 
-        // Si se mueve, marcar que no es un tap
         contenedor.addEventListener('touchmove', function(e) {
             didMove = true;
         }, { passive: true });
 
         contenedor.addEventListener('touchend', function(e) {
-            if (e.touches.length !== 0) return; // ignorar si quedan dedos en pantalla
-            // Si hubo movimiento, no hacemos nada (ni iniciar ni parar)
+            if (e.touches.length !== 0) return;
             if (didMove) return;
 
             const touch = e.changedTouches[0];
             const elem = document.elementFromPoint(touch.clientX, touch.clientY);
             if (!elem || !elem.closest(CONTENEDOR)) return;
 
+            // Solo actuar si el toque fue sobre un elemento de texto
+            const parrafo = elem.closest(SELECTORES_TEXTO);
+            if (!parrafo) return;
+
             const ahora = Date.now();
             const diff = ahora - ultimoToque;
 
             if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
-                // Doble toque -> iniciar lectura en el párrafo
                 if (toqueTimer) clearTimeout(toqueTimer);
                 ocultarBotonAltavoz(); limpiarSeleccion();
-                const parrafo = elem.closest(SELECTORES_TEXTO);
-                if (parrafo) {
-                    e.preventDefault(); e.stopPropagation(); iniciar(parrafo);
-                }
+                e.preventDefault(); e.stopPropagation();
+                iniciar(parrafo);
                 ultimoToque = 0;
             } else {
-                // Toque simple -> programar parada de lectura
                 ultimoToque = ahora;
                 if (toqueTimer) clearTimeout(toqueTimer);
                 toqueTimer = setTimeout(() => {
@@ -714,8 +725,295 @@
             }
         }, { capture: true });
     }
+})();
+</script>
 
-    scrollContainer = obtenerScrollContainer();
+<!-- ========== AUTO‑SCROLL PÍXEL A PÍXEL ========== -->
+<script>
+(function() {
+    'use strict';
+
+    const CONFIG = {
+        BASE_SPEED: 0.15,
+        SPEED_STEP: 0.05,
+        MAX_SPEED: 20,
+        MIN_SPEED: 0.05,
+        DOUBLE_TAP_DELAY: 300,
+        INDICATOR_DURATION: 1200,
+        RESUME_DELAY: 400,
+        GESTURE_COOLDOWN: 400
+    };
+
+    // Selectores de texto (los mismos que el TTS) para ignorar gestos en párrafos
+    const SELECTORES_TEXTO = [
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'p', 'blockquote', 'li',
+        'div.title', 'div.chapter-title', 'div.carta', 'div.informe', 'div.fecha',
+        '[class*="heading"]', '[class*="title"]', '[class*="chapter"]',
+        'figcaption'
+    ].join(', ');
+
+    function isTextElement(el) {
+        return !!el.closest(SELECTORES_TEXTO);
+    }
+
+    let state = {
+        isScrolling: false,
+        isPaused: false,
+        speed: CONFIG.BASE_SPEED,
+        currentScrollTop: 0,
+        animationFrameId: null,
+        lastTapTime: 0,
+        lastTapWasTap: false,
+        initialTwoFingerY: 0,
+        twoFingerActive: false,
+        indicatorTimeout: null,
+        lastTwoFingerEndTime: 0,
+        resumeTimeoutId: null
+    };
+
+    let singleTouchState = {
+        active: false,
+        startY: 0,
+        moved: false,
+        doubleTapPart: false
+    };
+    let maxTouchesInGesture = 0;
+
+    const speedIndicator = document.getElementById('pixel-scroll-indicator');
+
+    function formatSpeed(s) {
+        return s < 1 ? s.toFixed(2) : Math.round(s).toString();
+    }
+
+    function showIndicator() {
+        if (!speedIndicator) return;
+        speedIndicator.textContent = formatSpeed(state.speed);
+        speedIndicator.classList.add('visible');
+        if (state.indicatorTimeout) clearTimeout(state.indicatorTimeout);
+        state.indicatorTimeout = setTimeout(() => {
+            speedIndicator.classList.remove('visible');
+        }, CONFIG.INDICATOR_DURATION);
+    }
+
+    function changeSpeed(delta) {
+        const newSpeed = state.speed + delta;
+        state.speed = Math.min(CONFIG.MAX_SPEED, Math.max(CONFIG.MIN_SPEED, newSpeed));
+        state.speed = Math.round(state.speed * 100) / 100;
+        showIndicator();
+    }
+
+    function getScrollContainer() {
+        // Priorizar el contenedor del lector
+        const readerContainer = document.querySelector('#reader-container');
+        if (readerContainer && readerContainer.scrollHeight > readerContainer.clientHeight) {
+            return readerContainer;
+        }
+        // Fallback: buscar cualquier elemento con overflow scrollable
+        const all = document.querySelectorAll('*');
+        for (const el of all) {
+            const style = window.getComputedStyle(el);
+            if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+                return el;
+            }
+        }
+        return document.documentElement;
+    }
+
+    function smoothScrollStep() {
+        if (!state.isScrolling) {
+            if (state.animationFrameId) {
+                cancelAnimationFrame(state.animationFrameId);
+                state.animationFrameId = null;
+            }
+            return;
+        }
+
+        const container = getScrollContainer();
+        if (!container) {
+            state.animationFrameId = requestAnimationFrame(smoothScrollStep);
+            return;
+        }
+
+        state.currentScrollTop += state.speed;
+
+        const maxScroll = container.scrollHeight - container.clientHeight;
+        if (state.currentScrollTop >= maxScroll) {
+            state.currentScrollTop = maxScroll;
+            container.scrollTop = maxScroll;
+            stopAutoScrollPermanently();
+            return;
+        }
+
+        container.scrollTop = state.currentScrollTop;
+
+        state.animationFrameId = requestAnimationFrame(smoothScrollStep);
+    }
+
+    function startScroll() {
+        if (!state.isScrolling) {
+            state.isScrolling = true;
+            state.isPaused = false;
+            const container = getScrollContainer();
+            if (container) {
+                state.currentScrollTop = container.scrollTop;
+            }
+            state.animationFrameId = requestAnimationFrame(smoothScrollStep);
+            showIndicator();
+            console.log('Auto-scroll INICIADO');
+        }
+    }
+
+    function stopScroll() {
+        if (state.isScrolling) {
+            state.isScrolling = false;
+            console.log('Auto-scroll DETENIDO');
+        }
+    }
+
+    function pauseAutoScroll() {
+        if (state.isScrolling) {
+            stopScroll();
+            state.isPaused = true;
+            console.log('Auto-scroll PAUSADO por scroll manual');
+        }
+    }
+
+    function resumeAutoScroll() {
+        if (state.isPaused) {
+            state.isPaused = false;
+            startScroll();
+            console.log('Auto-scroll REANUDADO');
+        }
+    }
+
+    function clearResumeTimeout() {
+        if (state.resumeTimeoutId) {
+            clearTimeout(state.resumeTimeoutId);
+            state.resumeTimeoutId = null;
+        }
+    }
+
+    function stopAutoScrollPermanently() {
+        clearResumeTimeout();
+        state.isPaused = false;
+        stopScroll();
+        console.log('Auto-scroll PARADO definitivamente');
+    }
+
+    document.addEventListener('touchstart', handleTouchStart, { passive: false });
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+    function handleTouchStart(e) {
+        const touches = e.touches;
+        maxTouchesInGesture = Math.max(maxTouchesInGesture, touches.length);
+
+        // Si el toque ocurre sobre un elemento de texto, ignorar (para no interferir con TTS)
+        if (touches.length === 1 && e.target && isTextElement(e.target)) {
+            singleTouchState.active = false; // cancelar cualquier seguimiento
+            return;
+        }
+
+        if (touches.length === 1 && !state.twoFingerActive) {
+            const now = Date.now();
+            if (now - state.lastTwoFingerEndTime < CONFIG.GESTURE_COOLDOWN) return;
+
+            singleTouchState.active = true;
+            singleTouchState.startY = touches[0].clientY;
+            singleTouchState.moved = false;
+            singleTouchState.doubleTapPart = false;
+
+            if (state.lastTapWasTap && now - state.lastTapTime <= CONFIG.DOUBLE_TAP_DELAY) {
+                e.preventDefault();
+                if (state.isScrolling || state.isPaused) {
+                    stopAutoScrollPermanently();
+                } else {
+                    startScroll();
+                }
+                singleTouchState.doubleTapPart = true;
+                state.lastTapWasTap = false;
+                state.lastTapTime = 0;
+            } else {
+                state.lastTapTime = now;
+            }
+        } else if (touches.length === 2) {
+            e.preventDefault();
+            singleTouchState.active = false;
+            const finger1 = touches[0];
+            const finger2 = touches[1];
+            state.initialTwoFingerY = (finger1.clientY + finger2.clientY) / 2;
+            state.twoFingerActive = true;
+        }
+    }
+
+    function handleTouchMove(e) {
+        if (state.twoFingerActive && e.touches.length === 2) {
+            e.preventDefault();
+            const finger1 = e.touches[0];
+            const finger2 = e.touches[1];
+            const currentY = (finger1.clientY + finger2.clientY) / 2;
+            const deltaY = currentY - state.initialTwoFingerY;
+            if (Math.abs(deltaY) > 8) {
+                if (deltaY < 0) changeSpeed(CONFIG.SPEED_STEP);
+                else changeSpeed(-CONFIG.SPEED_STEP);
+                state.initialTwoFingerY = currentY;
+            }
+        } else if (singleTouchState.active && e.touches.length === 1) {
+            const touch = e.touches[0];
+            if (Math.abs(touch.clientY - singleTouchState.startY) > 5) {
+                singleTouchState.moved = true;
+                if (state.isScrolling) {
+                    pauseAutoScroll();
+                }
+                state.lastTapWasTap = false;
+                state.lastTapTime = 0;
+            }
+        }
+    }
+
+    function handleTouchEnd(e) {
+        if (e.touches.length === 0) {
+            if (maxTouchesInGesture >= 2) {
+                state.lastTwoFingerEndTime = Date.now();
+                state.twoFingerActive = false;
+            }
+
+            if (singleTouchState.active && maxTouchesInGesture === 1) {
+                if (singleTouchState.doubleTapPart) {
+                    state.lastTapWasTap = false;
+                    state.lastTapTime = 0;
+                } else if (singleTouchState.moved) {
+                    if (state.isPaused) {
+                        clearResumeTimeout();
+                        state.resumeTimeoutId = setTimeout(() => {
+                            resumeAutoScroll();
+                        }, CONFIG.RESUME_DELAY);
+                    }
+                    state.lastTapWasTap = false;
+                    state.lastTapTime = 0;
+                } else {
+                    // Toque simple sin movimiento y sin doble toque -> parar
+                    if (state.isScrolling || state.isPaused) {
+                        stopAutoScrollPermanently();
+                    }
+                    state.lastTapWasTap = true;
+                }
+                singleTouchState.active = false;
+            }
+
+            maxTouchesInGesture = 0;
+        } else {
+            if (state.twoFingerActive && e.touches.length < 2) {
+                state.twoFingerActive = false;
+            }
+            if (singleTouchState.active && e.touches.length > 1) {
+                singleTouchState.active = false;
+            }
+        }
+    }
+
+    console.log('Auto-scroll píxel a píxel cargado. Velocidad inicial: 0.15');
 })();
 </script>
 
