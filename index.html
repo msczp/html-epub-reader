@@ -4,10 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>HTML ePub Reader</title>
-    <!-- Fuente gratuita similar a Bookerly -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <style>
         :root {
@@ -223,15 +219,7 @@
         #btn-search-results { font-size: 1.6rem; background: transparent; border: none; color: inherit; cursor: pointer; padding: 2px 4px; display: flex; align-items: center; }
 
         .temp-highlight { background-color: #cccccc; border-radius: 2px; transition: background-color 0.4s ease; }
-
-        /* ===== FUENTE DEL LIBRO: Literata (similar a Bookerly) como primera opción ===== */
-        #reader-container {
-            flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative;
-            padding: 16px 18px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-            font-family: 'Literata', 'Bookerly', 'Georgia', 'Palatino Linotype', serif;
-            color: #1f1f1f; width: 100%; margin: 0 auto; word-wrap: break-word; overflow-x: hidden;
-            background: var(--reader-bg); scrollbar-width: none; -ms-overflow-style: none;
-        }
+        #reader-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; padding: 16px 18px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font-family: 'Georgia', 'Palatino Linotype', serif; color: #1f1f1f; width: 100%; margin: 0 auto; word-wrap: break-word; overflow-x: hidden; background: var(--reader-bg); scrollbar-width: none; -ms-overflow-style: none; }
         #reader-container::-webkit-scrollbar { display: none; }
         .book-content { font-size: 1.05rem; line-height: 1.7 !important; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%; overflow-x: hidden; font-weight: normal; }
         .book-content, .book-content * {
@@ -299,21 +287,7 @@
         .processing-card .msg { font-size: 0.95rem; color: #333; line-height: 1.4; padding: 0 4px; }
 
         #pixel-scroll-indicator {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background-color: rgba(0,0,0,0.75);
-            color: white;
-            padding: 8px 18px;
-            border-radius: 30px;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            font-size: 20px;
-            font-weight: bold;
-            z-index: 10000;
-            opacity: 0;
-            transition: opacity 0.25s;
-            pointer-events: none;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            position: fixed; top: 20px; right: 20px; background: rgba(0,0,0,0.75); color: #fff; padding: 8px 18px; border-radius: 30px; font-size: 20px; font-weight: bold; z-index: 10000; opacity: 0; transition: opacity 0.25s; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
         #pixel-scroll-indicator.visible { opacity: 1; }
     </style>
@@ -348,6 +322,7 @@
             <button class="opt-btn" id="btn-chapters" title="Capítulos">☰</button>
             <button class="opt-btn" id="btn-font-size" title="Tamaño de letra">Aa</button>
             <button class="opt-btn" id="btn-tts-speed" title="Velocidad de lectura">2x</button>
+            <button class="opt-btn" id="btn-scroll-speed" title="Velocidad de scroll">0.15</button>
             <button class="opt-btn" id="btn-fullscreen" title="Pantalla completa">⛶</button>
             <button class="opt-btn" id="btn-back-library" title="Volver a la biblioteca">⌘</button>
         </div>
@@ -376,7 +351,122 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="pixel-scroll-indicator"></div>
 
-<!-- ========== TTS (sin auto‑scroll, gestos independientes) ========== -->
+<!-- ========== AUTO‑SCROLL (controlado globalmente) ========== -->
+<script>
+(function() {
+    'use strict';
+
+    const SCROLL_SPEEDS = [0.05, 0.1, 0.15, 0.25, 0.5, 0.75, 1, 2, 5, 10, 20];
+    let currentSpeedIndex = 2; // 0.15
+    let speed = SCROLL_SPEEDS[currentSpeedIndex];
+
+    let state = {
+        isScrolling: false,
+        isPaused: false,
+        currentScrollTop: 0,
+        animationFrameId: null
+    };
+
+    const indicator = document.getElementById('pixel-scroll-indicator');
+
+    function showIndicator(s) {
+        if (!indicator) return;
+        indicator.textContent = s < 1 ? s.toFixed(2) : Math.round(s).toString();
+        indicator.classList.add('visible');
+        clearTimeout(window._scrollIndicatorTimeout);
+        window._scrollIndicatorTimeout = setTimeout(() => {
+            indicator.classList.remove('visible');
+        }, 1200);
+    }
+
+    function getScrollContainer() {
+        const rc = document.querySelector('#reader-container');
+        if (rc && rc.scrollHeight > rc.clientHeight) return rc;
+        return document.documentElement;
+    }
+
+    function smoothScrollStep() {
+        if (!state.isScrolling) {
+            if (state.animationFrameId) {
+                cancelAnimationFrame(state.animationFrameId);
+                state.animationFrameId = null;
+            }
+            return;
+        }
+        const container = getScrollContainer();
+        state.currentScrollTop += speed;
+        const maxScroll = container.scrollHeight - container.clientHeight;
+        if (state.currentScrollTop >= maxScroll) {
+            state.currentScrollTop = maxScroll;
+            container.scrollTop = maxScroll;
+            stopAutoScrollPermanently();
+            return;
+        }
+        container.scrollTop = state.currentScrollTop;
+        state.animationFrameId = requestAnimationFrame(smoothScrollStep);
+    }
+
+    window.startScroll = function() {
+        if (!state.isScrolling) {
+            state.isScrolling = true;
+            state.isPaused = false;
+            const container = getScrollContainer();
+            state.currentScrollTop = container.scrollTop;
+            state.animationFrameId = requestAnimationFrame(smoothScrollStep);
+            showIndicator(speed);
+        }
+    };
+
+    window.stopAutoScrollPermanently = function() {
+        state.isScrolling = false;
+        state.isPaused = false;
+        if (state.animationFrameId) {
+            cancelAnimationFrame(state.animationFrameId);
+            state.animationFrameId = null;
+        }
+    };
+
+    window.setScrollSpeed = function(idx) {
+        if (idx >= 0 && idx < SCROLL_SPEEDS.length) {
+            currentSpeedIndex = idx;
+            speed = SCROLL_SPEEDS[idx];
+            showIndicator(speed);
+            try { localStorage.setItem('reader_scroll_speed_index', idx); } catch(e) {}
+        }
+    };
+    window.getScrollSpeedIndex = function() { return currentSpeedIndex; };
+    window.getScrollSpeedValue = function() { return speed; };
+
+    // Restaurar preferencia
+    try {
+        const saved = localStorage.getItem('reader_scroll_speed_index');
+        if (saved !== null) {
+            const idx = parseInt(saved);
+            if (idx >= 0 && idx < SCROLL_SPEEDS.length) {
+                currentSpeedIndex = idx;
+                speed = SCROLL_SPEEDS[idx];
+            }
+        }
+    } catch(e) {}
+
+    // Botón en la barra
+    const $btnScrollSpeed = document.getElementById('btn-scroll-speed');
+    if ($btnScrollSpeed) {
+        $btnScrollSpeed.textContent = speed < 1 ? speed.toFixed(2) : Math.round(speed).toString();
+        $btnScrollSpeed.addEventListener('click', () => {
+            currentSpeedIndex = (currentSpeedIndex + 1) % SCROLL_SPEEDS.length;
+            speed = SCROLL_SPEEDS[currentSpeedIndex];
+            $btnScrollSpeed.textContent = speed < 1 ? speed.toFixed(2) : Math.round(speed).toString();
+            showIndicator(speed);
+            try { localStorage.setItem('reader_scroll_speed_index', currentSpeedIndex); } catch(e) {}
+        });
+    }
+
+    console.log('Auto-scroll unificado listo. Velocidad inicial:', speed);
+})();
+</script>
+
+<!-- ========== TTS + inicio conjunto ========== -->
 <script>
 (function() {
     'use strict';
@@ -399,6 +489,7 @@
     const PAUSA_IMAGEN = 1000;
     const PAUSA_SEPARADOR = 1200;
     const LONGITUD_MINIMA_TEXTO = 1;
+    const SCROLL_PORCENTAJE = 0.42;
 
     let leyendo = false;
     let utterance = null;
@@ -411,8 +502,6 @@
 
     let speakerBtn = null;
     let selectionData = null;
-
-    // Control de deslizamiento
     let didMove = false;
 
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
@@ -450,6 +539,43 @@
     }
     function releaseWakeLock() {
         if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+    }
+
+    function obtenerScrollContainer() {
+        return document.querySelector(CONTENEDOR) || window;
+    }
+
+    function getScrollTop() {
+        const c = obtenerScrollContainer();
+        return c === window ? window.scrollY : c.scrollTop;
+    }
+    function setScrollTop(value) {
+        const c = obtenerScrollContainer();
+        if (c === window) window.scrollTo(0, value);
+        else c.scrollTop = value;
+    }
+
+    function scrollElementoAlPorcentaje(elem, porcentaje) {
+        if (!elem) return;
+        const container = obtenerScrollContainer();
+        const cs = getComputedStyle(container);
+        const pTop = parseFloat(cs.paddingTop) || 0;
+        const contHeight = container.clientHeight;
+        const contRect = container.getBoundingClientRect();
+        const contentHeight = contHeight - pTop;
+        const desiredTop = contRect.top + pTop + contentHeight * porcentaje;
+
+        const firstCharTop = elem.getBoundingClientRect().top;
+        const currentScroll = getScrollTop();
+        let targetScroll;
+        if (container === window) {
+            targetScroll = currentScroll + firstCharTop - desiredTop;
+        } else {
+            const contRect2 = container.getBoundingClientRect();
+            const relativeTop = firstCharTop - contRect2.top;
+            targetScroll = currentScroll + relativeTop - (desiredTop - contRect2.top);
+        }
+        setScrollTop(Math.max(0, targetScroll));
     }
 
     function obtenerBloques() {
@@ -569,6 +695,13 @@
         indiceBloque = idx - 1;
         leyendo = true;
         requestWakeLock();
+
+        // Posicionar el párrafo al 42%
+        scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
+
+        // Iniciar scroll automático
+        if (window.startScroll) window.startScroll();
+
         procesarSiguienteBloque();
     }
 
@@ -591,6 +724,30 @@
         leyendo = true;
         requestWakeLock();
 
+        // Posicionar en la palabra exacta si es posible
+        const container = obtenerScrollContainer();
+        const range = document.createRange();
+        const textNode = parrafo.firstChild;
+        if (textNode && textNode.nodeType === Node.TEXT_NODE && charIndex <= textNode.length) {
+            range.setStart(textNode, charIndex);
+            range.collapse(true);
+            const rect = range.getClientRects()[0];
+            if (rect) {
+                const cs = getComputedStyle(container);
+                const pTop = parseFloat(cs.paddingTop) || 0;
+                const contHeight = container.clientHeight;
+                const contRect = container.getBoundingClientRect();
+                const contentHeight = contHeight - pTop;
+                const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+                const delta = rect.top - desiredTop;
+                setScrollTop(getScrollTop() + delta);
+            }
+        } else {
+            scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
+        }
+
+        if (window.startScroll) window.startScroll();
+
         leerBloque(idx, (exito) => {
             if (exito) {
                 indiceBloque = idx;
@@ -609,6 +766,9 @@
         bloques = [];
         indiceBloque = -1;
         releaseWakeLock();
+
+        // Parar también el scroll
+        if (window.stopAutoScrollPermanently) window.stopAutoScrollPermanently();
     }
 
     function limpiarSeleccion() {
@@ -694,15 +854,14 @@
 
         contenedor.addEventListener('touchend', function(e) {
             if (e.touches.length !== 0) return;
-            if (didMove) return;
+            if (didMove) return; // swipe no hace nada con TTS
 
             const touch = e.changedTouches[0];
             const elem = document.elementFromPoint(touch.clientX, touch.clientY);
             if (!elem || !elem.closest(CONTENEDOR)) return;
 
-            // Solo actuar si el toque fue sobre un elemento de texto
             const parrafo = elem.closest(SELECTORES_TEXTO);
-            if (!parrafo) return;
+            if (!parrafo) return; // ignorar toques en zonas sin texto
 
             const ahora = Date.now();
             const diff = ahora - ultimoToque;
@@ -737,291 +896,7 @@
 })();
 </script>
 
-<!-- ========== AUTO‑SCROLL PÍXEL A PÍXEL ========== -->
-<script>
-(function() {
-    'use strict';
-
-    const CONFIG = {
-        BASE_SPEED: 0.15,
-        SPEED_STEP: 0.05,
-        MAX_SPEED: 20,
-        MIN_SPEED: 0.05,
-        DOUBLE_TAP_DELAY: 300,
-        INDICATOR_DURATION: 1200,
-        RESUME_DELAY: 400,
-        GESTURE_COOLDOWN: 400
-    };
-
-    const SELECTORES_TEXTO = [
-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'p', 'blockquote', 'li',
-        'div.title', 'div.chapter-title', 'div.carta', 'div.informe', 'div.fecha',
-        '[class*="heading"]', '[class*="title"]', '[class*="chapter"]',
-        'figcaption'
-    ].join(', ');
-
-    function isTextElement(el) {
-        return !!el.closest(SELECTORES_TEXTO);
-    }
-
-    let state = {
-        isScrolling: false,
-        isPaused: false,
-        speed: CONFIG.BASE_SPEED,
-        currentScrollTop: 0,
-        animationFrameId: null,
-        lastTapTime: 0,
-        lastTapWasTap: false,
-        initialTwoFingerY: 0,
-        twoFingerActive: false,
-        indicatorTimeout: null,
-        lastTwoFingerEndTime: 0,
-        resumeTimeoutId: null
-    };
-
-    let singleTouchState = {
-        active: false,
-        startY: 0,
-        moved: false,
-        doubleTapPart: false
-    };
-    let maxTouchesInGesture = 0;
-
-    const speedIndicator = document.getElementById('pixel-scroll-indicator');
-
-    function formatSpeed(s) {
-        return s < 1 ? s.toFixed(2) : Math.round(s).toString();
-    }
-
-    function showIndicator() {
-        if (!speedIndicator) return;
-        speedIndicator.textContent = formatSpeed(state.speed);
-        speedIndicator.classList.add('visible');
-        if (state.indicatorTimeout) clearTimeout(state.indicatorTimeout);
-        state.indicatorTimeout = setTimeout(() => {
-            speedIndicator.classList.remove('visible');
-        }, CONFIG.INDICATOR_DURATION);
-    }
-
-    function changeSpeed(delta) {
-        const newSpeed = state.speed + delta;
-        state.speed = Math.min(CONFIG.MAX_SPEED, Math.max(CONFIG.MIN_SPEED, newSpeed));
-        state.speed = Math.round(state.speed * 100) / 100;
-        showIndicator();
-    }
-
-    function getScrollContainer() {
-        const readerContainer = document.querySelector('#reader-container');
-        if (readerContainer && readerContainer.scrollHeight > readerContainer.clientHeight) {
-            return readerContainer;
-        }
-        const all = document.querySelectorAll('*');
-        for (const el of all) {
-            const style = window.getComputedStyle(el);
-            if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
-                return el;
-            }
-        }
-        return document.documentElement;
-    }
-
-    function smoothScrollStep() {
-        if (!state.isScrolling) {
-            if (state.animationFrameId) {
-                cancelAnimationFrame(state.animationFrameId);
-                state.animationFrameId = null;
-            }
-            return;
-        }
-
-        const container = getScrollContainer();
-        if (!container) {
-            state.animationFrameId = requestAnimationFrame(smoothScrollStep);
-            return;
-        }
-
-        state.currentScrollTop += state.speed;
-
-        const maxScroll = container.scrollHeight - container.clientHeight;
-        if (state.currentScrollTop >= maxScroll) {
-            state.currentScrollTop = maxScroll;
-            container.scrollTop = maxScroll;
-            stopAutoScrollPermanently();
-            return;
-        }
-
-        container.scrollTop = state.currentScrollTop;
-
-        state.animationFrameId = requestAnimationFrame(smoothScrollStep);
-    }
-
-    function startScroll() {
-        if (!state.isScrolling) {
-            state.isScrolling = true;
-            state.isPaused = false;
-            const container = getScrollContainer();
-            if (container) {
-                state.currentScrollTop = container.scrollTop;
-            }
-            state.animationFrameId = requestAnimationFrame(smoothScrollStep);
-            showIndicator();
-            console.log('Auto-scroll INICIADO');
-        }
-    }
-
-    function stopScroll() {
-        if (state.isScrolling) {
-            state.isScrolling = false;
-            console.log('Auto-scroll DETENIDO');
-        }
-    }
-
-    function pauseAutoScroll() {
-        if (state.isScrolling) {
-            stopScroll();
-            state.isPaused = true;
-            console.log('Auto-scroll PAUSADO por scroll manual');
-        }
-    }
-
-    function resumeAutoScroll() {
-        if (state.isPaused) {
-            state.isPaused = false;
-            startScroll();
-            console.log('Auto-scroll REANUDADO');
-        }
-    }
-
-    function clearResumeTimeout() {
-        if (state.resumeTimeoutId) {
-            clearTimeout(state.resumeTimeoutId);
-            state.resumeTimeoutId = null;
-        }
-    }
-
-    function stopAutoScrollPermanently() {
-        clearResumeTimeout();
-        state.isPaused = false;
-        stopScroll();
-        console.log('Auto-scroll PARADO definitivamente');
-    }
-
-    document.addEventListener('touchstart', handleTouchStart, { passive: false });
-    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-    document.addEventListener('touchend', handleTouchEnd, { passive: false });
-
-    function handleTouchStart(e) {
-        const touches = e.touches;
-        maxTouchesInGesture = Math.max(maxTouchesInGesture, touches.length);
-
-        if (touches.length === 1 && e.target && isTextElement(e.target)) {
-            singleTouchState.active = false;
-            return;
-        }
-
-        if (touches.length === 1 && !state.twoFingerActive) {
-            const now = Date.now();
-            if (now - state.lastTwoFingerEndTime < CONFIG.GESTURE_COOLDOWN) return;
-
-            singleTouchState.active = true;
-            singleTouchState.startY = touches[0].clientY;
-            singleTouchState.moved = false;
-            singleTouchState.doubleTapPart = false;
-
-            if (state.lastTapWasTap && now - state.lastTapTime <= CONFIG.DOUBLE_TAP_DELAY) {
-                e.preventDefault();
-                if (state.isScrolling || state.isPaused) {
-                    stopAutoScrollPermanently();
-                } else {
-                    startScroll();
-                }
-                singleTouchState.doubleTapPart = true;
-                state.lastTapWasTap = false;
-                state.lastTapTime = 0;
-            } else {
-                state.lastTapTime = now;
-            }
-        } else if (touches.length === 2) {
-            e.preventDefault();
-            singleTouchState.active = false;
-            const finger1 = touches[0];
-            const finger2 = touches[1];
-            state.initialTwoFingerY = (finger1.clientY + finger2.clientY) / 2;
-            state.twoFingerActive = true;
-        }
-    }
-
-    function handleTouchMove(e) {
-        if (state.twoFingerActive && e.touches.length === 2) {
-            e.preventDefault();
-            const finger1 = e.touches[0];
-            const finger2 = e.touches[1];
-            const currentY = (finger1.clientY + finger2.clientY) / 2;
-            const deltaY = currentY - state.initialTwoFingerY;
-            if (Math.abs(deltaY) > 8) {
-                if (deltaY < 0) changeSpeed(CONFIG.SPEED_STEP);
-                else changeSpeed(-CONFIG.SPEED_STEP);
-                state.initialTwoFingerY = currentY;
-            }
-        } else if (singleTouchState.active && e.touches.length === 1) {
-            const touch = e.touches[0];
-            if (Math.abs(touch.clientY - singleTouchState.startY) > 5) {
-                singleTouchState.moved = true;
-                if (state.isScrolling) {
-                    pauseAutoScroll();
-                }
-                state.lastTapWasTap = false;
-                state.lastTapTime = 0;
-            }
-        }
-    }
-
-    function handleTouchEnd(e) {
-        if (e.touches.length === 0) {
-            if (maxTouchesInGesture >= 2) {
-                state.lastTwoFingerEndTime = Date.now();
-                state.twoFingerActive = false;
-            }
-
-            if (singleTouchState.active && maxTouchesInGesture === 1) {
-                if (singleTouchState.doubleTapPart) {
-                    state.lastTapWasTap = false;
-                    state.lastTapTime = 0;
-                } else if (singleTouchState.moved) {
-                    if (state.isPaused) {
-                        clearResumeTimeout();
-                        state.resumeTimeoutId = setTimeout(() => {
-                            resumeAutoScroll();
-                        }, CONFIG.RESUME_DELAY);
-                    }
-                    state.lastTapWasTap = false;
-                    state.lastTapTime = 0;
-                } else {
-                    if (state.isScrolling || state.isPaused) {
-                        stopAutoScrollPermanently();
-                    }
-                    state.lastTapWasTap = true;
-                }
-                singleTouchState.active = false;
-            }
-
-            maxTouchesInGesture = 0;
-        } else {
-            if (state.twoFingerActive && e.touches.length < 2) {
-                state.twoFingerActive = false;
-            }
-            if (singleTouchState.active && e.touches.length > 1) {
-                singleTouchState.active = false;
-            }
-        }
-    }
-
-    console.log('Auto-scroll píxel a píxel cargado. Velocidad inicial: 0.15');
-})();
-</script>
-
-<!-- ========== LECTOR PRINCIPAL ========== -->
+<!-- ========== LECTOR PRINCIPAL (sin cambios relevantes) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
@@ -1433,6 +1308,12 @@
 
             applyFontSizeToDocument();
             updateSpeedButton();
+            // Actualizar botón de velocidad de scroll
+            const $btnScrollSpeed = document.getElementById('btn-scroll-speed');
+            if ($btnScrollSpeed && window.getScrollSpeedValue) {
+                const val = window.getScrollSpeedValue();
+                $btnScrollSpeed.textContent = val < 1 ? val.toFixed(2) : Math.round(val).toString();
+            }
 
             const bookContent = $readerContainer.querySelector('.book-content');
             if (bookContent) {
