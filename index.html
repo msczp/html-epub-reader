@@ -286,8 +286,8 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .processing-card .msg { font-size: 0.95rem; color: #333; line-height: 1.4; padding: 0 4px; }
 
-        /* Indicador de velocidad TTS */
-        #speed-indicator {
+        /* Indicador del auto‑scroll */
+        #pixel-scroll-indicator {
             position: fixed;
             top: 20px;
             right: 20px;
@@ -302,8 +302,9 @@
             opacity: 0;
             transition: opacity 0.25s;
             pointer-events: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
-        #speed-indicator.visible { opacity: 1; }
+        #pixel-scroll-indicator.visible { opacity: 1; }
     </style>
 </head>
 <body>
@@ -362,9 +363,11 @@
 </div>
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
-<div id="speed-indicator"></div>
 
-<!-- ========== CONTROL UNIFICADO (TTS + auto‑scroll) ========== -->
+<!-- Indicador de velocidad del auto‑scroll -->
+<div id="pixel-scroll-indicator"></div>
+
+<!-- ========== TTS (sin auto‑scroll, gestos independientes) ========== -->
 <script>
 (function() {
     'use strict';
@@ -377,371 +380,640 @@
         '[class*="heading"]', '[class*="title"]', '[class*="chapter"]',
         'figcaption'
     ].join(', ');
+    const SELECTORES_IMAGEN = 'img, figure, picture, svg, [class*="image"], [class*="img"], [class*="illustration"]';
+    const SELECTOR_SEPARADOR_TAG = 'hr';
+    const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
 
-    // ---- Configuración ----
     let velocidadTTS = 2.0;
-    const AUTO_SCROLL_SPEED = 0.15;      // píxeles por frame (suave)
-    const TTS_SPEED_STEP = 0.1;
-    const TTS_SPEED_MIN = 0.5;
-    const TTS_SPEED_MAX = 3.0;
-
-    const DOBLE_TOQUE_MAX = 300;          // ms para doble toque
     const PAUSA_ENTRE_PARRAFOS = 150;
+    const DOBLE_TOQUE_MAX = 300;
     const PAUSA_IMAGEN = 1000;
     const PAUSA_SEPARADOR = 1200;
     const LONGITUD_MINIMA_TEXTO = 1;
 
-    // ---- Estados ----
-    let ttsActivo = false;
-    let autoScrollActivo = false;
-    let autoScrollPausado = false;
-    let autoScrollFrame = null;
-    let autoScrollAcum = 0;               // acumulador subpíxel
-
+    let leyendo = false;
     let utterance = null;
     let bloques = [];
     let indiceBloque = -1;
     let timeoutSig = null;
-
-    // Gestos
     let ultimoToque = 0;
     let toqueTimer = null;
-    let singleTouchMoved = false;
-    let singleTouchStartY = 0;
-    let twoFingerActive = false;
-    let twoFingerStartY = 0;
-    let gestureInProgress = false;
-
     let wakeLock = null;
-    let scrollContainer = null;
 
-    // Indicador de velocidad
-    const $indicator = document.getElementById('speed-indicator');
-    let indicatorTimer = null;
+    let speakerBtn = null;
+    let selectionData = null;
 
-    function showSpeed(value) {
-        if (!$indicator) return;
-        $indicator.textContent = value.toFixed(1) + 'x';
-        $indicator.classList.add('visible');
-        clearTimeout(indicatorTimer);
-        indicatorTimer = setTimeout(() => $indicator.classList.remove('visible'), 1200);
-    }
+    // Control de deslizamiento
+    let didMove = false;
 
-    // Sincronizar con el botón de velocidad
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
 
-    // ---- Utilidades ----
-    function getScrollContainer() {
-        const el = document.querySelector(CONTENEDOR);
-        return el || document.documentElement;
-    }
+    document.addEventListener('contextmenu', function(e) {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) return;
+        const range = selection.getRangeAt(0);
+        const nodo = range.startContainer;
+        const parrafo = nodo.parentElement?.closest(SELECTORES_TEXTO);
+        if (parrafo && document.querySelector(CONTENEDOR)?.contains(parrafo)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, { capture: true, passive: false });
 
-    function getScrollTop() {
-        const c = scrollContainer || getScrollContainer();
-        return c === document.documentElement ? window.scrollY : c.scrollTop;
-    }
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+        ${CONTENEDOR} * {
+            -webkit-touch-callout: none !important;
+            -webkit-user-select: text !important;
+            user-select: text !important;
+        }
+    `;
+    document.head.appendChild(styleEl);
 
-    function setScrollTop(value) {
-        const c = scrollContainer || getScrollContainer();
-        const clamped = Math.max(0, Math.floor(value));
-        if (c === document.documentElement) {
-            window.scrollTo(0, clamped);
-        } else {
-            c.scrollTop = clamped;
+    async function requestWakeLock() {
+        if ('wakeLock' in navigator) {
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                wakeLock.addEventListener('release', () => { wakeLock = null; });
+            } catch (err) {}
         }
     }
-
-    // Encontrar párrafo en la posición de scroll actual (para iniciar lectura desde fondo)
-    function getParagraphAtScroll() {
-        const container = document.querySelector(CONTENEDOR);
-        if (!container) return null;
-        const scrollTop = getScrollTop();
-        const clientHeight = container.clientHeight;
-        const targetY = scrollTop + clientHeight * 0.42; // 42% de la pantalla
-        const elementos = container.querySelectorAll(SELECTORES_TEXTO);
-        let mejor = null;
-        let mejorDist = Infinity;
-        for (const el of elementos) {
-            if (el.offsetParent === null) continue;
-            const rect = el.getBoundingClientRect();
-            const elTop = rect.top - container.getBoundingClientRect().top + scrollTop;
-            const dist = Math.abs(elTop - targetY);
-            if (dist < mejorDist) {
-                mejorDist = dist;
-                mejor = el;
-            }
-        }
-        return mejor;
+    function releaseWakeLock() {
+        if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     }
 
-    // ---- Auto‑scroll píxel a píxel ----
-    function startAutoScroll() {
-        if (autoScrollActivo) return;
-        autoScrollActivo = true;
-        autoScrollPausado = false;
-        autoScrollAcum = getScrollTop();
-        function step() {
-            if (!autoScrollActivo || autoScrollPausado) {
-                autoScrollFrame = null;
-                return;
-            }
-            autoScrollAcum += AUTO_SCROLL_SPEED;
-            const c = scrollContainer || getScrollContainer();
-            const maxScroll = c === document.documentElement
-                ? document.documentElement.scrollHeight - window.innerHeight
-                : c.scrollHeight - c.clientHeight;
-            if (autoScrollAcum >= maxScroll) {
-                autoScrollAcum = maxScroll;
-                setScrollTop(maxScroll);
-                stopAutoScroll();
-                return;
-            }
-            const intPart = Math.floor(autoScrollAcum);
-            setScrollTop(intPart);
-            autoScrollAcum -= intPart;
-            autoScrollFrame = requestAnimationFrame(step);
-        }
-        autoScrollFrame = requestAnimationFrame(step);
-    }
-
-    function stopAutoScroll() {
-        autoScrollActivo = false;
-        autoScrollPausado = false;
-        if (autoScrollFrame) {
-            cancelAnimationFrame(autoScrollFrame);
-            autoScrollFrame = null;
-        }
-    }
-
-    function pauseAutoScroll() {
-        if (autoScrollActivo && !autoScrollPausado) {
-            autoScrollPausado = true;
-            if (autoScrollFrame) cancelAnimationFrame(autoScrollFrame);
-            autoScrollFrame = null;
-            autoScrollAcum = getScrollTop(); // sincronizar
-        }
-    }
-
-    function resumeAutoScroll() {
-        if (autoScrollActivo && autoScrollPausado) {
-            autoScrollPausado = false;
-            autoScrollFrame = requestAnimationFrame(function step() {
-                if (!autoScrollActivo || autoScrollPausado) {
-                    autoScrollFrame = null;
-                    return;
-                }
-                autoScrollAcum += AUTO_SCROLL_SPEED;
-                const c = scrollContainer || getScrollContainer();
-                const maxScroll = c === document.documentElement
-                    ? document.documentElement.scrollHeight - window.innerHeight
-                    : c.scrollHeight - c.clientHeight;
-                if (autoScrollAcum >= maxScroll) {
-                    autoScrollAcum = maxScroll;
-                    setScrollTop(maxScroll);
-                    stopAutoScroll();
-                    return;
-                }
-                const intPart = Math.floor(autoScrollAcum);
-                setScrollTop(intPart);
-                autoScrollAcum -= intPart;
-                autoScrollFrame = requestAnimationFrame(step);
-            });
-        }
-    }
-
-    // ---- TTS ----
     function obtenerBloques() {
         const contenedor = document.querySelector(CONTENEDOR);
         if (!contenedor) return [];
         const elementos = contenedor.querySelectorAll(
-            `${SELECTORES_TEXTO}, img, figure, picture, svg, [class*="image"], [class*="img"], hr`
+            `${SELECTORES_TEXTO}, ${SELECTORES_IMAGEN}, ${SELECTOR_SEPARADOR_TAG}`
         );
         const lista = [];
-        const vistos = new Set();
+        const textosVistos = new Set();
         for (const el of elementos) {
             if (el.offsetParent === null && getComputedStyle(el).display === 'none') continue;
-            if (el.tagName === 'HR') { lista.push({ tipo:'separador', elemento:el }); continue; }
-            if (el.matches('img, figure, picture, svg, [class*="image"], [class*="img"]')) {
-                lista.push({ tipo:'imagen', elemento:el });
+
+            if (el.tagName === 'HR') {
+                lista.push({ tipo: 'separador', elemento: el });
                 continue;
             }
-            let txt = el.textContent.trim();
-            if (/^\*[ *]*\*$/.test(txt)) { lista.push({ tipo:'separador', elemento:el }); continue; }
-            if (txt.length < LONGITUD_MINIMA_TEXTO) continue;
-            const key = el.tagName+'|'+txt;
-            if (vistos.has(key)) continue;
-            vistos.add(key);
-            lista.push({ tipo:'texto', elemento:el, texto:txt });
+            if (el.matches(SELECTORES_IMAGEN)) {
+                lista.push({ tipo: 'imagen', elemento: el });
+                continue;
+            }
+
+            let texto = el.textContent.trim();
+            if (SEPARADOR_TEXTO.test(texto)) {
+                lista.push({ tipo: 'separador', elemento: el });
+                continue;
+            }
+            if (texto.length < LONGITUD_MINIMA_TEXTO) continue;
+            const key = el.tagName + '|' + texto;
+            if (textosVistos.has(key)) continue;
+            textosVistos.add(key);
+
+            lista.push({ tipo: 'texto', elemento: el, texto });
         }
         return lista;
     }
 
     function leerBloque(indice, callback, innerStartOffset = 0) {
-        if (!ttsActivo) return callback(false);
+        if (!leyendo) return callback(false);
         const bloque = bloques[indice];
         if (!bloque) return callback(false);
-        if (bloque.tipo === 'separador') { setTimeout(()=>callback(true), PAUSA_SEPARADOR); return; }
-        if (bloque.tipo === 'imagen') { callback(true); return; }
 
-        const texto = bloque.texto.replace(/\//g, ', ').substring(innerStartOffset);
-        const u = new SpeechSynthesisUtterance(texto);
+        if (bloque.tipo === 'separador') {
+            setTimeout(() => callback(true), PAUSA_SEPARADOR);
+            return;
+        }
+        if (bloque.tipo === 'imagen') {
+            callback(true);
+            return;
+        }
+
+        const fullText = bloque.texto.replace(/\//g, ', ');
+        const textoParaLeer = fullText.substring(innerStartOffset);
+
+        const u = new SpeechSynthesisUtterance(textoParaLeer);
         u.lang = 'es-ES';
         u.rate = velocidadTTS;
         u.pitch = 1.0;
-        u.onend = () => { utterance = null; callback(true); };
-        u.onerror = () => { utterance = null; callback(false); };
+
+        u.onend = () => {
+            utterance = null;
+            callback(true);
+        };
+        u.onerror = () => {
+            utterance = null;
+            callback(false);
+        };
+
         utterance = u;
         speechSynthesis.speak(u);
     }
 
-    function siguienteBloque() {
+    function procesarSiguienteBloque() {
         if (timeoutSig) clearTimeout(timeoutSig);
-        if (!ttsActivo) return;
+        if (!leyendo) return;
+
         indiceBloque++;
-        if (indiceBloque >= bloques.length) { detenerTodo(); return; }
+        if (indiceBloque >= bloques.length) {
+            detener();
+            return;
+        }
+
         const bloque = bloques[indiceBloque];
-        let pausa = PAUSA_ENTRE_PARRAFOS;
-        if (bloque.tipo === 'imagen') pausa = PAUSA_IMAGEN;
-        else if (bloque.tipo === 'separador') pausa = 0;
+
+        let pausaPrevia = PAUSA_ENTRE_PARRAFOS;
+        if (bloque.tipo === 'imagen') pausaPrevia = PAUSA_IMAGEN;
+        else if (bloque.tipo === 'separador') pausaPrevia = 0;
+
         timeoutSig = setTimeout(() => {
             timeoutSig = null;
-            if (!ttsActivo) return;
-            if (bloque.tipo === 'imagen' || bloque.tipo === 'separador') siguienteBloque();
-            else leerBloque(indiceBloque, exito => { if (exito) siguienteBloque(); });
-        }, pausa + 100);
+            if (!leyendo) return;
+            if (bloque.tipo === 'imagen' || bloque.tipo === 'separador') {
+                procesarSiguienteBloque();
+            } else {
+                leerBloque(indiceBloque, (exito) => {
+                    if (exito) procesarSiguienteBloque();
+                });
+            }
+        }, pausaPrevia + 100);
     }
 
-    function iniciarTTS(parrafo) {
-        detenerTodo();
+    function iniciar(parrafo) {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        detener();
         const todos = obtenerBloques();
-        if (!todos.length) return;
+        if (todos.length === 0) return;
+
         let idx = todos.findIndex(b => b.elemento === parrafo);
         if (idx === -1) {
             const txt = parrafo.textContent.trim();
-            idx = todos.findIndex(b => b.tipo==='texto' && b.elemento.textContent.trim()===txt);
+            idx = todos.findIndex(b => b.tipo === 'texto' && b.elemento.textContent.trim() === txt);
         }
         if (idx === -1) return;
+
         bloques = todos;
         indiceBloque = idx - 1;
-        ttsActivo = true;
-        if ('wakeLock' in navigator) navigator.wakeLock.request('screen').then(lock => { wakeLock = lock; }).catch(()=>{});
-        scrollContainer = getScrollContainer();
-        startAutoScroll();
-        siguienteBloque();
+        leyendo = true;
+        requestWakeLock();
+        procesarSiguienteBloque();
     }
 
-    function detenerTTS() {
+    function iniciarDesdeSeleccion(parrafo, charIndex) {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        detener();
+        const todos = obtenerBloques();
+        if (todos.length === 0) return;
+
+        let idx = todos.findIndex(b => b.elemento === parrafo);
+        if (idx === -1) {
+            const txt = parrafo.textContent.trim();
+            idx = todos.findIndex(b => b.tipo === 'texto' && b.elemento.textContent.trim() === txt);
+        }
+        if (idx === -1) return;
+
+        bloques = todos;
+        indiceBloque = idx;
+        leyendo = true;
+        requestWakeLock();
+
+        leerBloque(idx, (exito) => {
+            if (exito) {
+                indiceBloque = idx;
+                procesarSiguienteBloque();
+            }
+        }, charIndex);
+    }
+
+    function detener() {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
         if (timeoutSig) clearTimeout(timeoutSig);
         if (speechSynthesis) speechSynthesis.cancel();
-        ttsActivo = false;
+        leyendo = false;
         utterance = null;
         bloques = [];
         indiceBloque = -1;
-        if (wakeLock) { wakeLock.release().catch(()=>{}); wakeLock = null; }
+        releaseWakeLock();
     }
 
-    function detenerTodo() {
-        detenerTTS();
-        stopAutoScroll();
+    function limpiarSeleccion() {
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed) {
+            sel.removeAllRanges();
+        }
     }
 
-    // ---- Gestos táctiles ----
+    function crearBotonAltavoz() {
+        if (speakerBtn) return;
+        speakerBtn = document.createElement('div');
+        speakerBtn.id = 'tts-speaker-btn';
+        speakerBtn.style.cssText = `
+            position: fixed; bottom: 24px; right: 24px;
+            width: 56px; height: 56px; border-radius: 50%;
+            background: #333; color: #fff; font-size: 28px;
+            display: none; align-items: center; justify-content: center;
+            z-index: 9999999; cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: transform 0.2s, background 0.2s;
+            user-select: none;
+        `;
+        speakerBtn.innerHTML = '🔊';
+        speakerBtn.addEventListener('click', () => {
+            if (selectionData) {
+                iniciarDesdeSeleccion(selectionData.parrafo, selectionData.charIndex);
+                selectionData = null;
+            }
+        });
+        speakerBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+        speakerBtn.addEventListener('touchstart', (e) => e.stopPropagation());
+        document.body.appendChild(speakerBtn);
+    }
+
+    function mostrarBotonAltavoz() {
+        if (!speakerBtn) crearBotonAltavoz();
+        speakerBtn.style.display = 'flex';
+    }
+    function ocultarBotonAltavoz() {
+        if (speakerBtn) speakerBtn.style.display = 'none';
+        selectionData = null;
+    }
+
+    function manejarSeleccion() {
+        if (leyendo) { ocultarBotonAltavoz(); return; }
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) { ocultarBotonAltavoz(); return; }
+        const range = selection.getRangeAt(0);
+        const startNode = range.startContainer;
+        const parrafo = startNode.parentElement?.closest(SELECTORES_TEXTO);
+        if (!parrafo || !document.querySelector(CONTENEDOR)?.contains(parrafo)) { ocultarBotonAltavoz(); return; }
+        const startOffset = range.startOffset;
+        const nodo = startNode.nodeType === Node.TEXT_NODE ? startNode : null;
+        if (!nodo) { ocultarBotonAltavoz(); return; }
+        const walker = document.createTreeWalker(parrafo, NodeFilter.SHOW_TEXT, null, false);
+        let charIndex = 0;
+        let found = false;
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            if (node === nodo) { charIndex += startOffset; found = true; break; }
+            charIndex += node.textContent.length;
+        }
+        if (!found) { ocultarBotonAltavoz(); return; }
+        selectionData = { parrafo, charIndex };
+        mostrarBotonAltavoz();
+    }
+
+    document.addEventListener('mouseup', () => setTimeout(manejarSeleccion, 20));
+    document.addEventListener('touchend', () => setTimeout(manejarSeleccion, 20));
+    document.addEventListener('mousedown', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
+    document.addEventListener('touchstart', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
+
     const contenedor = document.querySelector(CONTENEDOR);
-    if (!contenedor) return;
+    if (contenedor) {
+        contenedor.addEventListener('touchstart', function(e) {
+            didMove = false;
+        }, { passive: true });
 
-    contenedor.addEventListener('touchstart', function(e) {
-        gestureInProgress = true;
-        singleTouchMoved = false;
-        if (e.touches.length === 1) {
-            singleTouchStartY = e.touches[0].clientY;
-        } else if (e.touches.length === 2) {
-            twoFingerActive = true;
-            twoFingerStartY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-            e.preventDefault();
-        }
-    }, { passive: false });
+        contenedor.addEventListener('touchmove', function(e) {
+            didMove = true;
+        }, { passive: true });
 
-    contenedor.addEventListener('touchmove', function(e) {
-        if (e.touches.length === 1 && !twoFingerActive) {
-            if (Math.abs(e.touches[0].clientY - singleTouchStartY) > 5) {
-                singleTouchMoved = true;
-                if (autoScrollActivo) pauseAutoScroll();
-            }
-        } else if (e.touches.length === 2 && twoFingerActive) {
-            const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-            const delta = currentY - twoFingerStartY;
-            if (Math.abs(delta) > 10) {
-                if (delta < 0) velocidadTTS = Math.min(TTS_SPEED_MAX, velocidadTTS + TTS_SPEED_STEP);
-                else velocidadTTS = Math.max(TTS_SPEED_MIN, velocidadTTS - TTS_SPEED_STEP);
-                showSpeed(velocidadTTS);
-                twoFingerStartY = currentY;
-            }
-            e.preventDefault();
-        }
-    }, { passive: false });
+        contenedor.addEventListener('touchend', function(e) {
+            if (e.touches.length !== 0) return;
+            if (didMove) return;
 
-    contenedor.addEventListener('touchend', function(e) {
-        if (e.touches.length === 0) {
-            if (twoFingerActive) {
-                twoFingerActive = false;
-                // Al soltar dos dedos, reanudar auto‑scroll si estaba pausado
-                if (autoScrollActivo && autoScrollPausado) resumeAutoScroll();
-            }
-            if (!singleTouchMoved && gestureInProgress) {
-                const ahora = Date.now();
-                const diff = ahora - ultimoToque;
-                if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
-                    // Doble toque -> iniciar lectura y scroll
-                    if (toqueTimer) clearTimeout(toqueTimer);
-                    const touch = e.changedTouches[0];
-                    const elem = document.elementFromPoint(touch.clientX, touch.clientY);
-                    const parrafo = elem ? elem.closest(SELECTORES_TEXTO) : null;
-                    const target = parrafo || getParagraphAtScroll();
-                    if (target) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        iniciarTTS(target);
-                    }
-                    ultimoToque = 0;
-                } else {
-                    ultimoToque = ahora;
-                    if (toqueTimer) clearTimeout(toqueTimer);
-                    toqueTimer = setTimeout(() => {
-                        // Toque simple sin movimiento -> detener todo
-                        if (!singleTouchMoved && !twoFingerActive) {
-                            detenerTodo();
-                        }
-                        toqueTimer = null;
-                    }, DOBLE_TOQUE_MAX);
-                }
-            }
-            // Si se había movido y autoScroll estaba pausado, reanudar tras un retardo
-            if (singleTouchMoved && autoScrollActivo && autoScrollPausado) {
-                setTimeout(() => {
-                    if (autoScrollActivo && autoScrollPausado) resumeAutoScroll();
-                }, 400);
-            }
-            gestureInProgress = false;
-        }
-    }, { passive: false });
+            const touch = e.changedTouches[0];
+            const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (!elem || !elem.closest(CONTENEDOR)) return;
 
-    // También permitir doble clic de ratón
-    contenedor.addEventListener('dblclick', function(e) {
-        const parrafo = e.target.closest(SELECTORES_TEXTO);
-        const target = parrafo || getParagraphAtScroll();
-        if (target) iniciarTTS(target);
-        e.preventDefault();
-    });
+            // Solo actuar si el toque fue sobre un elemento de texto
+            const parrafo = elem.closest(SELECTORES_TEXTO);
+            if (!parrafo) return;
 
-    // Sincronizar botón de velocidad con valor inicial
-    window.setVelocidadTTS = function(v) {
-        velocidadTTS = v;
-        const btn = document.getElementById('btn-tts-speed');
-        if (btn) btn.textContent = v.toFixed(1) + 'x';
+            const ahora = Date.now();
+            const diff = ahora - ultimoToque;
+
+            if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
+                if (toqueTimer) clearTimeout(toqueTimer);
+                ocultarBotonAltavoz(); limpiarSeleccion();
+                e.preventDefault(); e.stopPropagation();
+                iniciar(parrafo);
+                ultimoToque = 0;
+            } else {
+                ultimoToque = ahora;
+                if (toqueTimer) clearTimeout(toqueTimer);
+                toqueTimer = setTimeout(() => {
+                    if (leyendo) detener();
+                    toqueTimer = null;
+                }, DOBLE_TOQUE_MAX);
+            }
+        }, { capture: true, passive: false });
+
+        contenedor.addEventListener('dblclick', function(e) {
+            ocultarBotonAltavoz();
+            limpiarSeleccion();
+            const parrafo = e.target.closest(SELECTORES_TEXTO);
+            if (parrafo) {
+                e.preventDefault();
+                e.stopPropagation();
+                iniciar(parrafo);
+            }
+        }, { capture: true });
+    }
+})();
+</script>
+
+<!-- ========== AUTO‑SCROLL PÍXEL A PÍXEL ========== -->
+<script>
+(function() {
+    'use strict';
+
+    const CONFIG = {
+        BASE_SPEED: 0.15,
+        SPEED_STEP: 0.05,
+        MAX_SPEED: 20,
+        MIN_SPEED: 0.05,
+        DOUBLE_TAP_DELAY: 300,
+        INDICATOR_DURATION: 1200,
+        RESUME_DELAY: 400,
+        GESTURE_COOLDOWN: 400
     };
-    window.getVelocidadTTS = function() { return velocidadTTS; };
-    window.setVelocidadTTS(velocidadTTS);
+
+    // Selectores de texto (los mismos que el TTS) para ignorar gestos en párrafos
+    const SELECTORES_TEXTO = [
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'p', 'blockquote', 'li',
+        'div.title', 'div.chapter-title', 'div.carta', 'div.informe', 'div.fecha',
+        '[class*="heading"]', '[class*="title"]', '[class*="chapter"]',
+        'figcaption'
+    ].join(', ');
+
+    function isTextElement(el) {
+        return !!el.closest(SELECTORES_TEXTO);
+    }
+
+    let state = {
+        isScrolling: false,
+        isPaused: false,
+        speed: CONFIG.BASE_SPEED,
+        currentScrollTop: 0,
+        animationFrameId: null,
+        lastTapTime: 0,
+        lastTapWasTap: false,
+        initialTwoFingerY: 0,
+        twoFingerActive: false,
+        indicatorTimeout: null,
+        lastTwoFingerEndTime: 0,
+        resumeTimeoutId: null
+    };
+
+    let singleTouchState = {
+        active: false,
+        startY: 0,
+        moved: false,
+        doubleTapPart: false
+    };
+    let maxTouchesInGesture = 0;
+
+    const speedIndicator = document.getElementById('pixel-scroll-indicator');
+
+    function formatSpeed(s) {
+        return s < 1 ? s.toFixed(2) : Math.round(s).toString();
+    }
+
+    function showIndicator() {
+        if (!speedIndicator) return;
+        speedIndicator.textContent = formatSpeed(state.speed);
+        speedIndicator.classList.add('visible');
+        if (state.indicatorTimeout) clearTimeout(state.indicatorTimeout);
+        state.indicatorTimeout = setTimeout(() => {
+            speedIndicator.classList.remove('visible');
+        }, CONFIG.INDICATOR_DURATION);
+    }
+
+    function changeSpeed(delta) {
+        const newSpeed = state.speed + delta;
+        state.speed = Math.min(CONFIG.MAX_SPEED, Math.max(CONFIG.MIN_SPEED, newSpeed));
+        state.speed = Math.round(state.speed * 100) / 100;
+        showIndicator();
+    }
+
+    function getScrollContainer() {
+        // Priorizar el contenedor del lector
+        const readerContainer = document.querySelector('#reader-container');
+        if (readerContainer && readerContainer.scrollHeight > readerContainer.clientHeight) {
+            return readerContainer;
+        }
+        // Fallback: buscar cualquier elemento con overflow scrollable
+        const all = document.querySelectorAll('*');
+        for (const el of all) {
+            const style = window.getComputedStyle(el);
+            if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+                return el;
+            }
+        }
+        return document.documentElement;
+    }
+
+    function smoothScrollStep() {
+        if (!state.isScrolling) {
+            if (state.animationFrameId) {
+                cancelAnimationFrame(state.animationFrameId);
+                state.animationFrameId = null;
+            }
+            return;
+        }
+
+        const container = getScrollContainer();
+        if (!container) {
+            state.animationFrameId = requestAnimationFrame(smoothScrollStep);
+            return;
+        }
+
+        state.currentScrollTop += state.speed;
+
+        const maxScroll = container.scrollHeight - container.clientHeight;
+        if (state.currentScrollTop >= maxScroll) {
+            state.currentScrollTop = maxScroll;
+            container.scrollTop = maxScroll;
+            stopAutoScrollPermanently();
+            return;
+        }
+
+        container.scrollTop = state.currentScrollTop;
+
+        state.animationFrameId = requestAnimationFrame(smoothScrollStep);
+    }
+
+    function startScroll() {
+        if (!state.isScrolling) {
+            state.isScrolling = true;
+            state.isPaused = false;
+            const container = getScrollContainer();
+            if (container) {
+                state.currentScrollTop = container.scrollTop;
+            }
+            state.animationFrameId = requestAnimationFrame(smoothScrollStep);
+            showIndicator();
+            console.log('Auto-scroll INICIADO');
+        }
+    }
+
+    function stopScroll() {
+        if (state.isScrolling) {
+            state.isScrolling = false;
+            console.log('Auto-scroll DETENIDO');
+        }
+    }
+
+    function pauseAutoScroll() {
+        if (state.isScrolling) {
+            stopScroll();
+            state.isPaused = true;
+            console.log('Auto-scroll PAUSADO por scroll manual');
+        }
+    }
+
+    function resumeAutoScroll() {
+        if (state.isPaused) {
+            state.isPaused = false;
+            startScroll();
+            console.log('Auto-scroll REANUDADO');
+        }
+    }
+
+    function clearResumeTimeout() {
+        if (state.resumeTimeoutId) {
+            clearTimeout(state.resumeTimeoutId);
+            state.resumeTimeoutId = null;
+        }
+    }
+
+    function stopAutoScrollPermanently() {
+        clearResumeTimeout();
+        state.isPaused = false;
+        stopScroll();
+        console.log('Auto-scroll PARADO definitivamente');
+    }
+
+    document.addEventListener('touchstart', handleTouchStart, { passive: false });
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+    function handleTouchStart(e) {
+        const touches = e.touches;
+        maxTouchesInGesture = Math.max(maxTouchesInGesture, touches.length);
+
+        // Si el toque ocurre sobre un elemento de texto, ignorar (para no interferir con TTS)
+        if (touches.length === 1 && e.target && isTextElement(e.target)) {
+            singleTouchState.active = false; // cancelar cualquier seguimiento
+            return;
+        }
+
+        if (touches.length === 1 && !state.twoFingerActive) {
+            const now = Date.now();
+            if (now - state.lastTwoFingerEndTime < CONFIG.GESTURE_COOLDOWN) return;
+
+            singleTouchState.active = true;
+            singleTouchState.startY = touches[0].clientY;
+            singleTouchState.moved = false;
+            singleTouchState.doubleTapPart = false;
+
+            if (state.lastTapWasTap && now - state.lastTapTime <= CONFIG.DOUBLE_TAP_DELAY) {
+                e.preventDefault();
+                if (state.isScrolling || state.isPaused) {
+                    stopAutoScrollPermanently();
+                } else {
+                    startScroll();
+                }
+                singleTouchState.doubleTapPart = true;
+                state.lastTapWasTap = false;
+                state.lastTapTime = 0;
+            } else {
+                state.lastTapTime = now;
+            }
+        } else if (touches.length === 2) {
+            e.preventDefault();
+            singleTouchState.active = false;
+            const finger1 = touches[0];
+            const finger2 = touches[1];
+            state.initialTwoFingerY = (finger1.clientY + finger2.clientY) / 2;
+            state.twoFingerActive = true;
+        }
+    }
+
+    function handleTouchMove(e) {
+        if (state.twoFingerActive && e.touches.length === 2) {
+            e.preventDefault();
+            const finger1 = e.touches[0];
+            const finger2 = e.touches[1];
+            const currentY = (finger1.clientY + finger2.clientY) / 2;
+            const deltaY = currentY - state.initialTwoFingerY;
+            if (Math.abs(deltaY) > 8) {
+                if (deltaY < 0) changeSpeed(CONFIG.SPEED_STEP);
+                else changeSpeed(-CONFIG.SPEED_STEP);
+                state.initialTwoFingerY = currentY;
+            }
+        } else if (singleTouchState.active && e.touches.length === 1) {
+            const touch = e.touches[0];
+            if (Math.abs(touch.clientY - singleTouchState.startY) > 5) {
+                singleTouchState.moved = true;
+                if (state.isScrolling) {
+                    pauseAutoScroll();
+                }
+                state.lastTapWasTap = false;
+                state.lastTapTime = 0;
+            }
+        }
+    }
+
+    function handleTouchEnd(e) {
+        if (e.touches.length === 0) {
+            if (maxTouchesInGesture >= 2) {
+                state.lastTwoFingerEndTime = Date.now();
+                state.twoFingerActive = false;
+            }
+
+            if (singleTouchState.active && maxTouchesInGesture === 1) {
+                if (singleTouchState.doubleTapPart) {
+                    state.lastTapWasTap = false;
+                    state.lastTapTime = 0;
+                } else if (singleTouchState.moved) {
+                    if (state.isPaused) {
+                        clearResumeTimeout();
+                        state.resumeTimeoutId = setTimeout(() => {
+                            resumeAutoScroll();
+                        }, CONFIG.RESUME_DELAY);
+                    }
+                    state.lastTapWasTap = false;
+                    state.lastTapTime = 0;
+                } else {
+                    // Toque simple sin movimiento y sin doble toque -> parar
+                    if (state.isScrolling || state.isPaused) {
+                        stopAutoScrollPermanently();
+                    }
+                    state.lastTapWasTap = true;
+                }
+                singleTouchState.active = false;
+            }
+
+            maxTouchesInGesture = 0;
+        } else {
+            if (state.twoFingerActive && e.touches.length < 2) {
+                state.twoFingerActive = false;
+            }
+            if (singleTouchState.active && e.touches.length > 1) {
+                singleTouchState.active = false;
+            }
+        }
+    }
+
+    console.log('Auto-scroll píxel a píxel cargado. Velocidad inicial: 0.15');
 })();
 </script>
 
