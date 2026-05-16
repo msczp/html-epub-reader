@@ -351,7 +351,7 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="pixel-scroll-indicator"></div>
 
-<!-- ========== AUTO‑SCROLL (reactivación forzada tras snap) ========== -->
+<!-- ========== AUTO‑SCROLL (sin cambios) ========== -->
 <script>
 (function() {
     'use strict';
@@ -460,9 +460,8 @@
         if (snapping) return;
         snapping = true;
 
-        // Pausar auto‑scroll si está activo
         const wasScrolling = state.isScrolling;
-        if (state.isScrolling) {
+        if (wasScrolling) {
             state.isPaused = true;
             if (state.animationFrameId) {
                 cancelAnimationFrame(state.animationFrameId);
@@ -484,15 +483,10 @@
                 requestAnimationFrame(step);
             } else {
                 snapping = false;
-                // Reactivar el auto‑scroll siempre que el TTS siga activo
-                if (window.leyendo) {
-                    if (!state.isScrolling) {
-                        window.startScroll();
-                    } else if (state.isPaused) {
-                        state.isPaused = false;
-                        state.currentScrollTop = container.scrollTop;
-                        state.animationFrameId = requestAnimationFrame(smoothScrollStep);
-                    }
+                if (wasScrolling) {
+                    state.isPaused = false;
+                    state.currentScrollTop = container.scrollTop;
+                    state.animationFrameId = requestAnimationFrame(smoothScrollStep);
                 }
             }
         }
@@ -537,7 +531,7 @@
 })();
 </script>
 
-<!-- ========== TTS con pausa uniforme, arranque inmediato ========== -->
+<!-- ========== TTS con detección mejorada de párrafos ========== -->
 <script>
 (function() {
     'use strict';
@@ -561,7 +555,7 @@
     const PAUSA_SEPARADOR = 1200;
     const LONGITUD_MINIMA_TEXTO = 1;
     const SCROLL_PORCENTAJE = 0.42;
-    const PAUSA_ENTRE_ORACIONES = 200;   // pausa fija tras cada punto
+    const PAUSA_ENTRE_ORACIONES = 200;
 
     let leyendo = false;
     window.leyendo = false;
@@ -697,6 +691,7 @@
         }
     }
 
+    // ========== Nueva función obtenerBloques con detección por elemento DOM ==========
     function obtenerBloques() {
         const contenedor = document.querySelector(CONTENEDOR);
         if (!contenedor) return [];
@@ -704,9 +699,15 @@
             `${SELECTORES_TEXTO}, ${SELECTORES_IMAGEN}, ${SELECTOR_SEPARADOR_TAG}`
         );
         const lista = [];
-        const textosVistos = new Set();
+        const procesados = new WeakSet(); // para no duplicar elementos DOM
         for (const el of elementos) {
-            if (el.offsetParent === null && getComputedStyle(el).display === 'none') continue;
+            // Ignorar elementos ya procesados (por si varios selectores coinciden)
+            if (procesados.has(el)) continue;
+            procesados.add(el);
+
+            // Omitir elementos ocultos
+            const style = getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || el.offsetParent === null && style.display === 'none') continue;
 
             if (el.tagName === 'HR') {
                 lista.push({ tipo: 'separador', elemento: el });
@@ -723,9 +724,6 @@
                 continue;
             }
             if (texto.length < LONGITUD_MINIMA_TEXTO) continue;
-            const key = el.tagName + '|' + texto;
-            if (textosVistos.has(key)) continue;
-            textosVistos.add(key);
 
             lista.push({ tipo: 'texto', elemento: el, texto });
         }
@@ -756,7 +754,6 @@
         u.pitch = 1.0;
 
         u.onstart = function() {
-            // Arrancar auto‑scroll inmediatamente al hablar
             if (window.startScroll) window.startScroll();
             if (fallbackScrollTimer) {
                 clearTimeout(fallbackScrollTimer);
