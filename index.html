@@ -351,7 +351,7 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="pixel-scroll-indicator"></div>
 
-<!-- ========== AUTO‑SCROLL (sin cambios) ========== -->
+<!-- ========== AUTO‑SCROLL ========== -->
 <script>
 (function() {
     'use strict';
@@ -527,11 +527,11 @@
         });
     }
 
-    console.log('Auto-scroll reactivación forzada listo. Velocidad:', speed);
+    console.log('Auto-scroll listo. Velocidad:', speed);
 })();
 </script>
 
-<!-- ========== TTS con detección mejorada de párrafos ========== -->
+<!-- ========== TTS con umbrales 15‑85 % ========== -->
 <script>
 (function() {
     'use strict';
@@ -556,6 +556,10 @@
     const LONGITUD_MINIMA_TEXTO = 1;
     const SCROLL_PORCENTAJE = 0.42;
     const PAUSA_ENTRE_ORACIONES = 200;
+
+    // Nuevos umbrales
+    const SNAP_UPPER = 0.15;
+    const SNAP_LOWER = 0.85;
 
     let leyendo = false;
     window.leyendo = false;
@@ -681,8 +685,8 @@
         const pTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
         const contHeight = container.clientHeight;
         const contentHeight = contHeight - pTop;
-        const lowerBound = rect.top + pTop + contentHeight * 0.85;
-        const upperBound = rect.top + pTop + contentHeight * 0.42;
+        const lowerBound = rect.top + pTop + contentHeight * SNAP_LOWER;
+        const upperBound = rect.top + pTop + contentHeight * SNAP_UPPER;
 
         const elemRect = elem.getBoundingClientRect();
         if (elemRect.top > lowerBound || elemRect.top < upperBound) {
@@ -691,7 +695,6 @@
         }
     }
 
-    // ========== Nueva función obtenerBloques con detección por elemento DOM ==========
     function obtenerBloques() {
         const contenedor = document.querySelector(CONTENEDOR);
         if (!contenedor) return [];
@@ -699,13 +702,11 @@
             `${SELECTORES_TEXTO}, ${SELECTORES_IMAGEN}, ${SELECTOR_SEPARADOR_TAG}`
         );
         const lista = [];
-        const procesados = new WeakSet(); // para no duplicar elementos DOM
+        const procesados = new WeakSet();
         for (const el of elementos) {
-            // Ignorar elementos ya procesados (por si varios selectores coinciden)
             if (procesados.has(el)) continue;
             procesados.add(el);
 
-            // Omitir elementos ocultos
             const style = getComputedStyle(el);
             if (style.display === 'none' || style.visibility === 'hidden' || el.offsetParent === null && style.display === 'none') continue;
 
@@ -770,12 +771,13 @@
                 const container = document.querySelector(CONTENEDOR);
                 if (!container) return;
                 const rect = container.getBoundingClientRect();
-                const thresholdY = rect.top + rect.height * 0.85;
-                if (charPos.top > thresholdY) {
-                    const cs = getComputedStyle(container);
-                    const pTop = parseFloat(cs.paddingTop) || 0;
-                    const contHeight = container.clientHeight;
-                    const contentHeight = contHeight - pTop;
+                const pTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
+                const contHeight = container.clientHeight;
+                const contentHeight = contHeight - pTop;
+                const lowerThreshold = rect.top + pTop + contentHeight * SNAP_LOWER;
+                const upperThreshold = rect.top + pTop + contentHeight * SNAP_UPPER;
+
+                if (charPos.top > lowerThreshold || charPos.top < upperThreshold) {
                     const desiredTop = rect.top + pTop + contentHeight * 0.42;
                     const targetScroll = container.scrollTop + (charPos.top - desiredTop);
                     window.animateScrollSnap(targetScroll, 400);
