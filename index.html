@@ -200,10 +200,10 @@
         .chapter-marker-item {
             position: absolute;
             top: 0;
-            width: 1px;               /* ← más fina (antes 2px) */
+            width: 1px;
             height: 100%;
             background-color: #999;
-            opacity: 0.6;             /* ligeramente más transparente */
+            opacity: 0.6;
         }
 
         #options-panel { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; background: var(--reader-bar); flex-shrink: 0; padding: 0; color: var(--text); }
@@ -351,7 +351,7 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="pixel-scroll-indicator"></div>
 
-<!-- ========== AUTO‑SCROLL (controlado globalmente, con pausa por arrastre) ========== -->
+<!-- ========== AUTO‑SCROLL (con snap suave integrado) ========== -->
 <script>
 (function() {
     'use strict';
@@ -367,6 +367,7 @@
         animationFrameId: null
     };
     let resumeTimerId = null;
+    let snapping = false; // para evitar múltiples snaps simultáneos
 
     const indicator = document.getElementById('pixel-scroll-indicator');
 
@@ -387,7 +388,7 @@
     }
 
     function smoothScrollStep() {
-        if (!state.isScrolling || state.isPaused) {
+        if (!state.isScrolling || state.isPaused || snapping) {
             if (state.animationFrameId) {
                 cancelAnimationFrame(state.animationFrameId);
                 state.animationFrameId = null;
@@ -429,10 +430,11 @@
             clearTimeout(resumeTimerId);
             resumeTimerId = null;
         }
+        snapping = false;
     };
 
     window.pauseAutoScroll = function() {
-        if (state.isScrolling) {
+        if (state.isScrolling && !snapping) {
             state.isPaused = true;
             if (state.animationFrameId) {
                 cancelAnimationFrame(state.animationFrameId);
@@ -446,12 +448,46 @@
     };
 
     window.resumeAutoScroll = function() {
-        if (state.isScrolling && state.isPaused) {
+        if (state.isScrolling && state.isPaused && !snapping) {
             state.isPaused = false;
             const container = getScrollContainer();
             state.currentScrollTop = container.scrollTop;
             state.animationFrameId = requestAnimationFrame(smoothScrollStep);
         }
+    };
+
+    window.animateScrollSnap = function(targetScroll, duration) {
+        if (snapping) return; // un solo snap a la vez
+        snapping = true;
+
+        // Pausar auto-scroll si está activo
+        const wasScrolling = state.isScrolling;
+        if (wasScrolling) {
+            window.pauseAutoScroll();
+        }
+
+        const container = getScrollContainer();
+        const start = container.scrollTop;
+        const change = targetScroll - start;
+        const startTime = performance.now();
+
+        function step(now) {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            container.scrollTop = start + change * ease;
+            if (progress < 1) {
+                requestAnimationFrame(step);
+            } else {
+                // Finalizado
+                snapping = false;
+                if (wasScrolling) {
+                    state.currentScrollTop = container.scrollTop;
+                    window.resumeAutoScroll();
+                }
+            }
+        }
+        requestAnimationFrame(step);
     };
 
     window.setScrollSpeed = function(idx) {
@@ -477,7 +513,6 @@
         }
     } catch(e) {}
 
-    // Botón en la barra
     const $btnScrollSpeed = document.getElementById('btn-scroll-speed');
     if ($btnScrollSpeed) {
         $btnScrollSpeed.textContent = speed < 1 ? speed.toFixed(2) : Math.round(speed).toString();
@@ -490,11 +525,11 @@
         });
     }
 
-    console.log('Auto-scroll unificado listo. Velocidad inicial:', speed);
+    console.log('Auto-scroll unificado listo (con snap). Velocidad inicial:', speed);
 })();
 </script>
 
-<!-- ========== TTS + inicio conjunto (con retraso de 300 ms para el scroll) ========== -->
+<!-- ========== TTS + SNAP CORRECTOR ========== -->
 <script>
 (function() {
     'use strict';
@@ -518,7 +553,7 @@
     const PAUSA_SEPARADOR = 1200;
     const LONGITUD_MINIMA_TEXTO = 1;
     const SCROLL_PORCENTAJE = 0.42;
-    const SCROLL_DELAY = 300; // retardo para iniciar el scroll junto con la voz
+    const SCROLL_DELAY = 300;
 
     let leyendo = false;
     window.leyendo = false;
@@ -533,11 +568,14 @@
     let speakerBtn = null;
     let selectionData = null;
     let didMove = false;
+    window.isManualScrolling = false;
 
-    // Timer para iniciar el auto‑scroll después de un retardo
     let scrollStartTimer = null;
-    // Timer para reanudar auto‑scroll después de arrastre
     let autoResumeTimer = null;
+
+    // Para el snap corrector
+    let currentReadingElem = null;
+    let currentStartOffset = 0;
 
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
@@ -613,6 +651,26 @@
         setScrollTop(Math.max(0, targetScroll));
     }
 
+    function getCharPosition(elem, charIndex) {
+        const walker = document.createTreeWalker(elem, NodeFilter.SHOW_TEXT, null, false);
+        let current = 0;
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            const length = node.textContent.length;
+            if (current + length > charIndex) {
+                const offset = charIndex - current;
+                const range = document.createRange();
+                range.setStart(node, offset);
+                range.setEnd(node, Math.min(offset + 1, length));
+                const rect = range.getClientRects()[0];
+                if (rect) return { top: rect.top, left: rect.left };
+                return null;
+            }
+            current += length;
+        }
+        return null;
+    }
+
     function obtenerBloques() {
         const contenedor = document.querySelector(CONTENEDOR);
         if (!contenedor) return [];
@@ -662,6 +720,9 @@
             return;
         }
 
+        currentReadingElem = bloque.elemento;
+        currentStartOffset = innerStartOffset;
+
         const fullText = bloque.texto.replace(/\//g, ', ');
         const textoParaLeer = fullText.substring(innerStartOffset);
 
@@ -669,6 +730,32 @@
         u.lang = 'es-ES';
         u.rate = velocidadTTS;
         u.pitch = 1.0;
+
+        u.onboundary = function(event) {
+            if (!leyendo || window.isManualScrolling || !currentReadingElem) return;
+
+            if (event.name === 'word' || event.name === 'sentence') {
+                const globalChar = event.charIndex + currentStartOffset;
+                const charPos = getCharPosition(currentReadingElem, globalChar);
+                if (!charPos) return;
+
+                const container = document.querySelector(CONTENEDOR);
+                if (!container) return;
+
+                const rect = container.getBoundingClientRect();
+                const thresholdY = rect.top + rect.height * 0.85;
+
+                if (charPos.top > thresholdY) {
+                    const cs = getComputedStyle(container);
+                    const pTop = parseFloat(cs.paddingTop) || 0;
+                    const contHeight = container.clientHeight;
+                    const contentHeight = contHeight - pTop;
+                    const desiredTop = rect.top + pTop + contentHeight * 0.42;
+                    const targetScroll = container.scrollTop + (charPos.top - desiredTop);
+                    window.animateScrollSnap(targetScroll, 400);
+                }
+            }
+        };
 
         u.onend = () => {
             utterance = null;
@@ -732,13 +819,9 @@
         window.leyendo = true;
         requestWakeLock();
 
-        // Posicionar el párrafo al 42%
         scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
-
-        // Iniciar TTS inmediatamente
         procesarSiguienteBloque();
 
-        // Programar el inicio del auto‑scroll con un retardo para que coincida con la voz
         clearTimeout(scrollStartTimer);
         scrollStartTimer = setTimeout(() => {
             if (leyendo && window.startScroll) window.startScroll();
@@ -766,7 +849,6 @@
         window.leyendo = true;
         requestWakeLock();
 
-        // Posicionar en la palabra exacta si es posible
         const container = obtenerScrollContainer();
         const range = document.createRange();
         const textNode = parrafo.firstChild;
@@ -788,7 +870,6 @@
             scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
         }
 
-        // Iniciar TTS
         leerBloque(idx, (exito) => {
             if (exito) {
                 indiceBloque = idx;
@@ -796,7 +877,6 @@
             }
         }, charIndex);
 
-        // Programar inicio del auto‑scroll con retardo
         clearTimeout(scrollStartTimer);
         scrollStartTimer = setTimeout(() => {
             if (leyendo && window.startScroll) window.startScroll();
@@ -816,11 +896,9 @@
         indiceBloque = -1;
         releaseWakeLock();
 
-        // Cancelar el temporizador de inicio del scroll si aún no se ha ejecutado
         clearTimeout(scrollStartTimer);
         scrollStartTimer = null;
 
-        // Parar también el scroll
         if (window.stopAutoScrollPermanently) window.stopAutoScrollPermanently();
     }
 
@@ -897,9 +975,9 @@
 
     const contenedor = document.querySelector(CONTENEDOR);
     if (contenedor) {
-        // touchstart: pausar auto‑scroll y limpiar timer de reanudación
         contenedor.addEventListener('touchstart', function(e) {
             didMove = false;
+            window.isManualScrolling = false;
             if (window.pauseAutoScroll) {
                 clearTimeout(autoResumeTimer);
                 window.pauseAutoScroll();
@@ -908,42 +986,40 @@
 
         contenedor.addEventListener('touchmove', function(e) {
             didMove = true;
+            window.isManualScrolling = true;
         }, { passive: true });
 
         contenedor.addEventListener('touchend', function(e) {
             if (e.touches.length !== 0) return;
 
-            // Si hubo movimiento, programar reanudación del auto‑scroll
             if (didMove) {
+                window.isManualScrolling = false;
                 if (window.resumeAutoScroll) {
                     clearTimeout(autoResumeTimer);
                     autoResumeTimer = setTimeout(() => {
                         window.resumeAutoScroll();
                     }, 200);
                 }
-                return; // No hacer nada más (ni TTS start/stop)
+                return;
             }
 
-            // Toque sin movimiento: comportamiento original del TTS
             const touch = e.changedTouches[0];
             const elem = document.elementFromPoint(touch.clientX, touch.clientY);
             if (!elem || !elem.closest(CONTENEDOR)) return;
 
             const parrafo = elem.closest(SELECTORES_TEXTO);
-            if (!parrafo) return; // ignorar toques en zonas sin texto
+            if (!parrafo) return;
 
             const ahora = Date.now();
             const diff = ahora - ultimoToque;
 
             if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
-                // Doble toque → iniciar TTS + scroll
                 if (toqueTimer) clearTimeout(toqueTimer);
                 ocultarBotonAltavoz(); limpiarSeleccion();
                 e.preventDefault(); e.stopPropagation();
                 iniciar(parrafo);
                 ultimoToque = 0;
             } else {
-                // Toque simple → programar parada
                 ultimoToque = ahora;
                 if (toqueTimer) clearTimeout(toqueTimer);
                 toqueTimer = setTimeout(() => {
