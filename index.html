@@ -351,7 +351,7 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="pixel-scroll-indicator"></div>
 
-<!-- ========== AUTO‑SCROLL (corregido: pausa/reanudación sin bloqueo) ========== -->
+<!-- ========== AUTO‑SCROLL (reactivación forzada tras snap) ========== -->
 <script>
 (function() {
     'use strict';
@@ -367,7 +367,7 @@
         animationFrameId: null
     };
     let resumeTimerId = null;
-    let snapping = false;   // solo para evitar múltiples snaps simultáneos
+    let snapping = false;
 
     const indicator = document.getElementById('pixel-scroll-indicator');
 
@@ -433,7 +433,6 @@
         snapping = false;
     };
 
-    // Pausar sin condiciones extra
     window.pauseAutoScroll = function() {
         if (state.isScrolling) {
             state.isPaused = true;
@@ -448,7 +447,6 @@
         }
     };
 
-    // Reanudar sin condiciones extra
     window.resumeAutoScroll = function() {
         if (state.isScrolling && state.isPaused) {
             state.isPaused = false;
@@ -462,9 +460,9 @@
         if (snapping) return;
         snapping = true;
 
+        // Pausar auto‑scroll si está activo
         const wasScrolling = state.isScrolling;
-        // Pausar siempre, sin depender de snapping
-        if (wasScrolling) {
+        if (state.isScrolling) {
             state.isPaused = true;
             if (state.animationFrameId) {
                 cancelAnimationFrame(state.animationFrameId);
@@ -486,10 +484,15 @@
                 requestAnimationFrame(step);
             } else {
                 snapping = false;
-                if (wasScrolling) {
-                    state.isPaused = false;
-                    state.currentScrollTop = container.scrollTop;
-                    state.animationFrameId = requestAnimationFrame(smoothScrollStep);
+                // Reactivar el auto‑scroll siempre que el TTS siga activo
+                if (window.leyendo) {
+                    if (!state.isScrolling) {
+                        window.startScroll();
+                    } else if (state.isPaused) {
+                        state.isPaused = false;
+                        state.currentScrollTop = container.scrollTop;
+                        state.animationFrameId = requestAnimationFrame(smoothScrollStep);
+                    }
                 }
             }
         }
@@ -530,11 +533,11 @@
         });
     }
 
-    console.log('Auto-scroll corregido. Velocidad:', speed);
+    console.log('Auto-scroll reactivación forzada listo. Velocidad:', speed);
 })();
 </script>
 
-<!-- ========== TTS con pausa uniforme y arranque del scroll en onstart + respaldo ========== -->
+<!-- ========== TTS con pausa uniforme, arranque inmediato ========== -->
 <script>
 (function() {
     'use strict';
@@ -577,11 +580,10 @@
 
     let autoResumeTimer = null;
     let sentenceTimeout = null;
-    let fallbackScrollTimer = null;  // temporizador de respaldo
+    let fallbackScrollTimer = null;
 
     let currentReadingElem = null;
     let currentStartOffset = 0;
-    let scrollStarted = false;   // para iniciar el auto‑scroll solo una vez
 
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
@@ -754,15 +756,11 @@
         u.pitch = 1.0;
 
         u.onstart = function() {
-            // Arrancar el auto‑scroll con la primera frase hablada
-            if (!scrollStarted && window.startScroll) {
-                scrollStarted = true;
-                window.startScroll();
-                // Limpiar el fallback si se activó correctamente
-                if (fallbackScrollTimer) {
-                    clearTimeout(fallbackScrollTimer);
-                    fallbackScrollTimer = null;
-                }
+            // Arrancar auto‑scroll inmediatamente al hablar
+            if (window.startScroll) window.startScroll();
+            if (fallbackScrollTimer) {
+                clearTimeout(fallbackScrollTimer);
+                fallbackScrollTimer = null;
             }
         };
 
@@ -877,12 +875,9 @@
     function scheduleFallbackScroll() {
         if (fallbackScrollTimer) clearTimeout(fallbackScrollTimer);
         fallbackScrollTimer = setTimeout(() => {
-            if (leyendo && !scrollStarted && window.startScroll) {
-                scrollStarted = true;
-                window.startScroll();
-            }
+            if (leyendo && window.startScroll) window.startScroll();
             fallbackScrollTimer = null;
-        }, 500);
+        }, 300);
     }
 
     function iniciar(parrafo) {
@@ -903,13 +898,11 @@
         indiceBloque = idx - 1;
         leyendo = true;
         window.leyendo = true;
-        scrollStarted = false;
         requestWakeLock();
 
         scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
         procesarSiguienteBloque();
 
-        // Respaldo si onstart no se dispara
         scheduleFallbackScroll();
     }
 
@@ -931,7 +924,6 @@
         indiceBloque = idx;
         leyendo = true;
         window.leyendo = true;
-        scrollStarted = false;
         requestWakeLock();
 
         const container = obtenerScrollContainer();
@@ -978,8 +970,6 @@
         bloques = [];
         indiceBloque = -1;
         releaseWakeLock();
-
-        scrollStarted = false;
 
         if (window.stopAutoScrollPermanently) window.stopAutoScrollPermanently();
     }
