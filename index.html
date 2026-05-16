@@ -351,13 +351,13 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="pixel-scroll-indicator"></div>
 
-<!-- ========== AUTO‑SCROLL (con snap suave integrado) ========== -->
+<!-- ========== AUTO‑SCROLL (sin cambios) ========== -->
 <script>
 (function() {
     'use strict';
 
     const SCROLL_SPEEDS = [0.05, 0.1, 0.15, 0.25, 0.5, 0.75, 1, 2, 5, 10, 20];
-    let currentSpeedIndex = 2; // 0.15
+    let currentSpeedIndex = 2;
     let speed = SCROLL_SPEEDS[currentSpeedIndex];
 
     let state = {
@@ -522,11 +522,11 @@
         });
     }
 
-    console.log('Auto-scroll unificado listo (con snap). Velocidad inicial:', speed);
+    console.log('Auto-scroll listo. Velocidad:', speed);
 })();
 </script>
 
-<!-- ========== TTS CON PAUSA UNIFORME DE 200 ms TRAS CADA PUNTO ========== -->
+<!-- ========== TTS con pausa uniforme y arranque del scroll en onstart ========== -->
 <script>
 (function() {
     'use strict';
@@ -550,8 +550,7 @@
     const PAUSA_SEPARADOR = 1200;
     const LONGITUD_MINIMA_TEXTO = 1;
     const SCROLL_PORCENTAJE = 0.42;
-    const SCROLL_DELAY = 300;
-    const PAUSA_ENTRE_ORACIONES = 200;   // nueva pausa fija tras cada frase
+    const PAUSA_ENTRE_ORACIONES = 200;   // pausa fija tras cada punto (excluyendo comas)
 
     let leyendo = false;
     window.leyendo = false;
@@ -568,12 +567,12 @@
     let didMove = false;
     window.isManualScrolling = false;
 
-    let scrollStartTimer = null;
     let autoResumeTimer = null;
-    let sentenceTimeout = null;   // timeout para pausa entre frases
+    let sentenceTimeout = null;
 
     let currentReadingElem = null;
     let currentStartOffset = 0;
+    let scrollStarted = false;   // para iniciar el auto‑scroll solo una vez
 
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
@@ -722,11 +721,8 @@
         return lista;
     }
 
-    // ---------- NUEVO: División en frases con pausa fija ----------
     function splitIntoSentences(text) {
-        // Reemplaza varios signos de puntuación consecutivos por un único punto
         const cleaned = text.replace(/([.!?]+)/g, '.');
-        // Divide por punto, exclamación o interrogación, seguido de espacio o fin de cadena
         const sentences = cleaned.split(/(?<=[.!?])\s+/);
         return sentences.filter(s => s.trim().length > 0);
     }
@@ -737,18 +733,24 @@
             return callback(false);
         }
         if (index >= sentences.length) {
-            // todas las frases terminadas
             callback(true);
             return;
         }
 
         const sentence = sentences[index];
-        // Calcular offset de caracteres para el onboundary (acumulativo)
-        const charOffset = sentences.slice(0, index).reduce((sum, s) => sum + s.length + 1, 0); // +1 por el espacio que se quitó
+        const charOffset = sentences.slice(0, index).reduce((sum, s) => sum + s.length + 1, 0);
         const u = new SpeechSynthesisUtterance(sentence);
         u.lang = 'es-ES';
         u.rate = velocidadTTS;
         u.pitch = 1.0;
+
+        u.onstart = function() {
+            // Arrancar el auto‑scroll con la primera frase hablada
+            if (!scrollStarted && window.startScroll) {
+                scrollStarted = true;
+                window.startScroll();
+            }
+        };
 
         u.onboundary = function(event) {
             if (!leyendo || window.isManualScrolling || !currentReadingElem) return;
@@ -774,7 +776,6 @@
 
         u.onend = () => {
             utterance = null;
-            // Pausa fija de 200ms después de cada frase (salvo la última)
             if (index < sentences.length - 1) {
                 if (sentenceTimeout) clearTimeout(sentenceTimeout);
                 sentenceTimeout = setTimeout(() => {
@@ -782,7 +783,6 @@
                     speakSentenceQueue(sentences, index + 1, callback, baseCharOffset);
                 }, PAUSA_ENTRE_ORACIONES);
             } else {
-                // última frase, continuar sin pausa adicional
                 speakSentenceQueue(sentences, index + 1, callback, baseCharOffset);
             }
         };
@@ -816,7 +816,6 @@
         let fullText = bloque.texto.replace(/\//g, ', ');
         const textoParaLeer = fullText.substring(innerStartOffset);
 
-        // Dividir en frases y hablar secuencialmente
         const sentences = splitIntoSentences(textoParaLeer);
         if (sentences.length === 0) {
             callback(true);
@@ -824,7 +823,6 @@
         }
 
         speakSentenceQueue(sentences, 0, (exito) => {
-            // Al terminar todas las frases del bloque
             utterance = null;
             callback(exito);
         }, innerStartOffset);
@@ -880,16 +878,11 @@
         indiceBloque = idx - 1;
         leyendo = true;
         window.leyendo = true;
+        scrollStarted = false;        // reiniciar bandera de scroll
         requestWakeLock();
 
         scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
         procesarSiguienteBloque();
-
-        clearTimeout(scrollStartTimer);
-        scrollStartTimer = setTimeout(() => {
-            if (leyendo && window.startScroll) window.startScroll();
-            scrollStartTimer = null;
-        }, SCROLL_DELAY);
     }
 
     function iniciarDesdeSeleccion(parrafo, charIndex) {
@@ -910,6 +903,7 @@
         indiceBloque = idx;
         leyendo = true;
         window.leyendo = true;
+        scrollStarted = false;
         requestWakeLock();
 
         const container = obtenerScrollContainer();
@@ -939,12 +933,6 @@
                 procesarSiguienteBloque();
             }
         }, charIndex);
-
-        clearTimeout(scrollStartTimer);
-        scrollStartTimer = setTimeout(() => {
-            if (leyendo && window.startScroll) window.startScroll();
-            scrollStartTimer = null;
-        }, SCROLL_DELAY);
     }
 
     function detener() {
@@ -960,8 +948,7 @@
         indiceBloque = -1;
         releaseWakeLock();
 
-        clearTimeout(scrollStartTimer);
-        scrollStartTimer = null;
+        scrollStarted = false;
 
         if (window.stopAutoScrollPermanently) window.stopAutoScrollPermanently();
     }
