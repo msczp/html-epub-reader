@@ -351,7 +351,7 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="pixel-scroll-indicator"></div>
 
-<!-- ========== AUTO‑SCROLL ========== -->
+<!-- ========== AUTO‑SCROLL (corregido: pausa/reanudación sin bloqueo) ========== -->
 <script>
 (function() {
     'use strict';
@@ -367,7 +367,7 @@
         animationFrameId: null
     };
     let resumeTimerId = null;
-    let snapping = false;
+    let snapping = false;   // solo para evitar múltiples snaps simultáneos
 
     const indicator = document.getElementById('pixel-scroll-indicator');
 
@@ -388,7 +388,7 @@
     }
 
     function smoothScrollStep() {
-        if (!state.isScrolling || state.isPaused || snapping) {
+        if (!state.isScrolling || state.isPaused) {
             if (state.animationFrameId) {
                 cancelAnimationFrame(state.animationFrameId);
                 state.animationFrameId = null;
@@ -433,8 +433,9 @@
         snapping = false;
     };
 
+    // Pausar sin condiciones extra
     window.pauseAutoScroll = function() {
-        if (state.isScrolling && !snapping) {
+        if (state.isScrolling) {
             state.isPaused = true;
             if (state.animationFrameId) {
                 cancelAnimationFrame(state.animationFrameId);
@@ -447,8 +448,9 @@
         }
     };
 
+    // Reanudar sin condiciones extra
     window.resumeAutoScroll = function() {
-        if (state.isScrolling && state.isPaused && !snapping) {
+        if (state.isScrolling && state.isPaused) {
             state.isPaused = false;
             const container = getScrollContainer();
             state.currentScrollTop = container.scrollTop;
@@ -461,8 +463,13 @@
         snapping = true;
 
         const wasScrolling = state.isScrolling;
+        // Pausar siempre, sin depender de snapping
         if (wasScrolling) {
-            window.pauseAutoScroll();
+            state.isPaused = true;
+            if (state.animationFrameId) {
+                cancelAnimationFrame(state.animationFrameId);
+                state.animationFrameId = null;
+            }
         }
 
         const container = getScrollContainer();
@@ -480,8 +487,9 @@
             } else {
                 snapping = false;
                 if (wasScrolling) {
+                    state.isPaused = false;
                     state.currentScrollTop = container.scrollTop;
-                    window.resumeAutoScroll();
+                    state.animationFrameId = requestAnimationFrame(smoothScrollStep);
                 }
             }
         }
@@ -522,11 +530,11 @@
         });
     }
 
-    console.log('Auto-scroll listo. Velocidad:', speed);
+    console.log('Auto-scroll corregido. Velocidad:', speed);
 })();
 </script>
 
-<!-- ========== TTS con pausa uniforme, arranque del scroll en onstart + respaldo ========== -->
+<!-- ========== TTS con pausa uniforme y arranque del scroll en onstart + respaldo ========== -->
 <script>
 (function() {
     'use strict';
