@@ -526,7 +526,7 @@
 })();
 </script>
 
-<!-- ========== TTS + SNAP CORRECTOR (con verificación al cambiar de párrafo) ========== -->
+<!-- ========== TTS CON PAUSA UNIFORME DE 200 ms TRAS CADA PUNTO ========== -->
 <script>
 (function() {
     'use strict';
@@ -551,6 +551,7 @@
     const LONGITUD_MINIMA_TEXTO = 1;
     const SCROLL_PORCENTAJE = 0.42;
     const SCROLL_DELAY = 300;
+    const PAUSA_ENTRE_ORACIONES = 200;   // nueva pausa fija tras cada frase
 
     let leyendo = false;
     window.leyendo = false;
@@ -569,6 +570,7 @@
 
     let scrollStartTimer = null;
     let autoResumeTimer = null;
+    let sentenceTimeout = null;   // timeout para pausa entre frases
 
     let currentReadingElem = null;
     let currentStartOffset = 0;
@@ -679,7 +681,6 @@
         const upperBound = rect.top + pTop + contentHeight * 0.42;
 
         const elemRect = elem.getBoundingClientRect();
-        // Si el elemento está por debajo del 85% o por encima del 42%, reposicionar
         if (elemRect.top > lowerBound || elemRect.top < upperBound) {
             const targetScroll = container.scrollTop + (elemRect.top - (rect.top + pTop + contentHeight * 0.42));
             window.animateScrollSnap(Math.max(0, targetScroll), 400);
@@ -721,6 +722,80 @@
         return lista;
     }
 
+    // ---------- NUEVO: División en frases con pausa fija ----------
+    function splitIntoSentences(text) {
+        // Reemplaza varios signos de puntuación consecutivos por un único punto
+        const cleaned = text.replace(/([.!?]+)/g, '.');
+        // Divide por punto, exclamación o interrogación, seguido de espacio o fin de cadena
+        const sentences = cleaned.split(/(?<=[.!?])\s+/);
+        return sentences.filter(s => s.trim().length > 0);
+    }
+
+    function speakSentenceQueue(sentences, index, callback, baseCharOffset) {
+        if (!leyendo) {
+            if (sentenceTimeout) clearTimeout(sentenceTimeout);
+            return callback(false);
+        }
+        if (index >= sentences.length) {
+            // todas las frases terminadas
+            callback(true);
+            return;
+        }
+
+        const sentence = sentences[index];
+        // Calcular offset de caracteres para el onboundary (acumulativo)
+        const charOffset = sentences.slice(0, index).reduce((sum, s) => sum + s.length + 1, 0); // +1 por el espacio que se quitó
+        const u = new SpeechSynthesisUtterance(sentence);
+        u.lang = 'es-ES';
+        u.rate = velocidadTTS;
+        u.pitch = 1.0;
+
+        u.onboundary = function(event) {
+            if (!leyendo || window.isManualScrolling || !currentReadingElem) return;
+            if (event.name === 'word' || event.name === 'sentence') {
+                const globalChar = baseCharOffset + charOffset + event.charIndex;
+                const charPos = getCharPosition(currentReadingElem, globalChar);
+                if (!charPos) return;
+                const container = document.querySelector(CONTENEDOR);
+                if (!container) return;
+                const rect = container.getBoundingClientRect();
+                const thresholdY = rect.top + rect.height * 0.85;
+                if (charPos.top > thresholdY) {
+                    const cs = getComputedStyle(container);
+                    const pTop = parseFloat(cs.paddingTop) || 0;
+                    const contHeight = container.clientHeight;
+                    const contentHeight = contHeight - pTop;
+                    const desiredTop = rect.top + pTop + contentHeight * 0.42;
+                    const targetScroll = container.scrollTop + (charPos.top - desiredTop);
+                    window.animateScrollSnap(targetScroll, 400);
+                }
+            }
+        };
+
+        u.onend = () => {
+            utterance = null;
+            // Pausa fija de 200ms después de cada frase (salvo la última)
+            if (index < sentences.length - 1) {
+                if (sentenceTimeout) clearTimeout(sentenceTimeout);
+                sentenceTimeout = setTimeout(() => {
+                    sentenceTimeout = null;
+                    speakSentenceQueue(sentences, index + 1, callback, baseCharOffset);
+                }, PAUSA_ENTRE_ORACIONES);
+            } else {
+                // última frase, continuar sin pausa adicional
+                speakSentenceQueue(sentences, index + 1, callback, baseCharOffset);
+            }
+        };
+        u.onerror = () => {
+            utterance = null;
+            if (sentenceTimeout) clearTimeout(sentenceTimeout);
+            callback(false);
+        };
+
+        utterance = u;
+        speechSynthesis.speak(u);
+    }
+
     function leerBloque(indice, callback, innerStartOffset = 0) {
         if (!leyendo) return callback(false);
         const bloque = bloques[indice];
@@ -738,52 +813,21 @@
         currentReadingElem = bloque.elemento;
         currentStartOffset = innerStartOffset;
 
-        const fullText = bloque.texto.replace(/\//g, ', ');
+        let fullText = bloque.texto.replace(/\//g, ', ');
         const textoParaLeer = fullText.substring(innerStartOffset);
 
-        const u = new SpeechSynthesisUtterance(textoParaLeer);
-        u.lang = 'es-ES';
-        u.rate = velocidadTTS;
-        u.pitch = 1.0;
-
-        u.onboundary = function(event) {
-            if (!leyendo || window.isManualScrolling || !currentReadingElem) return;
-
-            if (event.name === 'word' || event.name === 'sentence') {
-                const globalChar = event.charIndex + currentStartOffset;
-                const charPos = getCharPosition(currentReadingElem, globalChar);
-                if (!charPos) return;
-
-                const container = document.querySelector(CONTENEDOR);
-                if (!container) return;
-
-                const rect = container.getBoundingClientRect();
-                const thresholdY = rect.top + rect.height * 0.85;
-
-                if (charPos.top > thresholdY) {
-                    // La palabra se salió por debajo, reposicionar
-                    const cs = getComputedStyle(container);
-                    const pTop = parseFloat(cs.paddingTop) || 0;
-                    const contHeight = container.clientHeight;
-                    const contentHeight = contHeight - pTop;
-                    const desiredTop = rect.top + pTop + contentHeight * 0.42;
-                    const targetScroll = container.scrollTop + (charPos.top - desiredTop);
-                    window.animateScrollSnap(targetScroll, 400);
-                }
-            }
-        };
-
-        u.onend = () => {
-            utterance = null;
+        // Dividir en frases y hablar secuencialmente
+        const sentences = splitIntoSentences(textoParaLeer);
+        if (sentences.length === 0) {
             callback(true);
-        };
-        u.onerror = () => {
-            utterance = null;
-            callback(false);
-        };
+            return;
+        }
 
-        utterance = u;
-        speechSynthesis.speak(u);
+        speakSentenceQueue(sentences, 0, (exito) => {
+            // Al terminar todas las frases del bloque
+            utterance = null;
+            callback(exito);
+        }, innerStartOffset);
     }
 
     function procesarSiguienteBloque() {
@@ -797,8 +841,6 @@
         }
 
         const bloque = bloques[indiceBloque];
-
-        // Antes de leer el nuevo bloque, asegurarse de que es visible
         if (bloque.tipo === 'texto' || bloque.tipo === 'imagen' || bloque.tipo === 'separador') {
             ensureElementInView(bloque.elemento);
         }
@@ -910,6 +952,7 @@
         limpiarSeleccion();
         if (timeoutSig) clearTimeout(timeoutSig);
         if (speechSynthesis) speechSynthesis.cancel();
+        if (sentenceTimeout) clearTimeout(sentenceTimeout);
         leyendo = false;
         window.leyendo = false;
         utterance = null;
