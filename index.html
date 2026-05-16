@@ -351,7 +351,7 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="pixel-scroll-indicator"></div>
 
-<!-- ========== AUTO‑SCROLL (sin cambios) ========== -->
+<!-- ========== AUTO‑SCROLL ========== -->
 <script>
 (function() {
     'use strict';
@@ -526,7 +526,7 @@
 })();
 </script>
 
-<!-- ========== TTS con pausa uniforme y arranque del scroll en onstart ========== -->
+<!-- ========== TTS con pausa uniforme, arranque del scroll en onstart + respaldo ========== -->
 <script>
 (function() {
     'use strict';
@@ -550,7 +550,7 @@
     const PAUSA_SEPARADOR = 1200;
     const LONGITUD_MINIMA_TEXTO = 1;
     const SCROLL_PORCENTAJE = 0.42;
-    const PAUSA_ENTRE_ORACIONES = 200;   // pausa fija tras cada punto (excluyendo comas)
+    const PAUSA_ENTRE_ORACIONES = 200;   // pausa fija tras cada punto
 
     let leyendo = false;
     window.leyendo = false;
@@ -569,6 +569,7 @@
 
     let autoResumeTimer = null;
     let sentenceTimeout = null;
+    let fallbackScrollTimer = null;  // temporizador de respaldo
 
     let currentReadingElem = null;
     let currentStartOffset = 0;
@@ -749,6 +750,11 @@
             if (!scrollStarted && window.startScroll) {
                 scrollStarted = true;
                 window.startScroll();
+                // Limpiar el fallback si se activó correctamente
+                if (fallbackScrollTimer) {
+                    clearTimeout(fallbackScrollTimer);
+                    fallbackScrollTimer = null;
+                }
             }
         };
 
@@ -860,6 +866,17 @@
         }, pausaPrevia + 100);
     }
 
+    function scheduleFallbackScroll() {
+        if (fallbackScrollTimer) clearTimeout(fallbackScrollTimer);
+        fallbackScrollTimer = setTimeout(() => {
+            if (leyendo && !scrollStarted && window.startScroll) {
+                scrollStarted = true;
+                window.startScroll();
+            }
+            fallbackScrollTimer = null;
+        }, 500);
+    }
+
     function iniciar(parrafo) {
         ocultarBotonAltavoz();
         limpiarSeleccion();
@@ -878,11 +895,14 @@
         indiceBloque = idx - 1;
         leyendo = true;
         window.leyendo = true;
-        scrollStarted = false;        // reiniciar bandera de scroll
+        scrollStarted = false;
         requestWakeLock();
 
         scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
         procesarSiguienteBloque();
+
+        // Respaldo si onstart no se dispara
+        scheduleFallbackScroll();
     }
 
     function iniciarDesdeSeleccion(parrafo, charIndex) {
@@ -933,6 +953,8 @@
                 procesarSiguienteBloque();
             }
         }, charIndex);
+
+        scheduleFallbackScroll();
     }
 
     function detener() {
@@ -941,6 +963,7 @@
         if (timeoutSig) clearTimeout(timeoutSig);
         if (speechSynthesis) speechSynthesis.cancel();
         if (sentenceTimeout) clearTimeout(sentenceTimeout);
+        if (fallbackScrollTimer) clearTimeout(fallbackScrollTimer);
         leyendo = false;
         window.leyendo = false;
         utterance = null;
