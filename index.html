@@ -367,7 +367,7 @@
         animationFrameId: null
     };
     let resumeTimerId = null;
-    let snapping = false; // para evitar múltiples snaps simultáneos
+    let snapping = false;
 
     const indicator = document.getElementById('pixel-scroll-indicator');
 
@@ -457,10 +457,9 @@
     };
 
     window.animateScrollSnap = function(targetScroll, duration) {
-        if (snapping) return; // un solo snap a la vez
+        if (snapping) return;
         snapping = true;
 
-        // Pausar auto-scroll si está activo
         const wasScrolling = state.isScrolling;
         if (wasScrolling) {
             window.pauseAutoScroll();
@@ -479,7 +478,6 @@
             if (progress < 1) {
                 requestAnimationFrame(step);
             } else {
-                // Finalizado
                 snapping = false;
                 if (wasScrolling) {
                     state.currentScrollTop = container.scrollTop;
@@ -501,7 +499,6 @@
     window.getScrollSpeedIndex = function() { return currentSpeedIndex; };
     window.getScrollSpeedValue = function() { return speed; };
 
-    // Restaurar preferencia
     try {
         const saved = localStorage.getItem('reader_scroll_speed_index');
         if (saved !== null) {
@@ -529,7 +526,7 @@
 })();
 </script>
 
-<!-- ========== TTS + SNAP CORRECTOR ========== -->
+<!-- ========== TTS + SNAP CORRECTOR (con verificación al cambiar de párrafo) ========== -->
 <script>
 (function() {
     'use strict';
@@ -573,7 +570,6 @@
     let scrollStartTimer = null;
     let autoResumeTimer = null;
 
-    // Para el snap corrector
     let currentReadingElem = null;
     let currentStartOffset = 0;
 
@@ -671,6 +667,25 @@
         return null;
     }
 
+    function ensureElementInView(elem) {
+        if (!elem || !leyendo) return;
+        const container = document.querySelector(CONTENEDOR);
+        if (!container) return;
+        const rect = container.getBoundingClientRect();
+        const pTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
+        const contHeight = container.clientHeight;
+        const contentHeight = contHeight - pTop;
+        const lowerBound = rect.top + pTop + contentHeight * 0.85;
+        const upperBound = rect.top + pTop + contentHeight * 0.42;
+
+        const elemRect = elem.getBoundingClientRect();
+        // Si el elemento está por debajo del 85% o por encima del 42%, reposicionar
+        if (elemRect.top > lowerBound || elemRect.top < upperBound) {
+            const targetScroll = container.scrollTop + (elemRect.top - (rect.top + pTop + contentHeight * 0.42));
+            window.animateScrollSnap(Math.max(0, targetScroll), 400);
+        }
+    }
+
     function obtenerBloques() {
         const contenedor = document.querySelector(CONTENEDOR);
         if (!contenedor) return [];
@@ -746,6 +761,7 @@
                 const thresholdY = rect.top + rect.height * 0.85;
 
                 if (charPos.top > thresholdY) {
+                    // La palabra se salió por debajo, reposicionar
                     const cs = getComputedStyle(container);
                     const pTop = parseFloat(cs.paddingTop) || 0;
                     const contHeight = container.clientHeight;
@@ -781,6 +797,11 @@
         }
 
         const bloque = bloques[indiceBloque];
+
+        // Antes de leer el nuevo bloque, asegurarse de que es visible
+        if (bloque.tipo === 'texto' || bloque.tipo === 'imagen' || bloque.tipo === 'separador') {
+            ensureElementInView(bloque.elemento);
+        }
 
         let pausaPrevia = PAUSA_ENTRE_PARRAFOS;
         if (bloque.tipo === 'imagen') pausaPrevia = PAUSA_IMAGEN;
