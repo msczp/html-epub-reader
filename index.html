@@ -344,7 +344,7 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS ORIGINAL CORREGIDO (velocidad ajustable) ========== -->
+<!-- ========== TTS CON SCROLL INTELIGENTE POR LÍNEA ========== -->
 <script>
 (function() {
     'use strict';
@@ -361,11 +361,11 @@
     const SELECTOR_SEPARADOR_TAG = 'hr';
     const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
 
-    let velocidadTTS = 2.0;   // ahora es modificable
+    let velocidadTTS = 2.0;
     const PAUSA_ENTRE_PARRAFOS = 150;
     const DOBLE_TOQUE_MAX = 300;
-    const SCROLL_PORCENTAJE = 0.42;
-    const SCROLL_TOLERANCIA = 5;
+    const SCROLL_PORCENTAJE = 0.42;            // posición ideal
+    const SCROLL_TOLERANCIA = 10;              // píxeles de margen antes de corregir
     const PAUSA_IMAGEN = 1000;
     const PAUSA_SEPARADOR = 1200;
     const LONGITUD_MINIMA_TEXTO = 1;
@@ -374,6 +374,10 @@
 
     const FALLBACK_DELAY = 400;
     const SCROLL_ANIMATION_MS = 500;
+
+    // Zona de confort: solo se ajusta si la palabra sale de este rango
+    const UPPER_LIMIT = 0.15;   // 15% desde arriba
+    const LOWER_LIMIT = 0.85;   // 85% desde arriba
 
     let leyendo = false;
     let utterance = null;
@@ -400,7 +404,6 @@
     let speakerBtn = null;
     let selectionData = null;
 
-    // Exponer el setter y getter para el botón de velocidad
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
 
@@ -516,13 +519,19 @@
         const contHeight = container.clientHeight;
         const contRect = container.getBoundingClientRect();
         const contentHeight = contHeight - pTop;
-        const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
 
-        const delta = charPos.top - desiredTop;
-        if (Math.abs(delta) <= SCROLL_TOLERANCIA) return;
+        // Posición relativa de la palabra dentro del área visible (0 = arriba, 1 = abajo)
+        const relativePos = (charPos.top - contRect.top - pTop) / contentHeight;
 
-        const targetScroll = getScrollTop() + delta;
-        animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+        // Solo reaccionar si está fuera de la zona de confort
+        if (relativePos >= LOWER_LIMIT || relativePos <= UPPER_LIMIT) {
+            const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+            const delta = charPos.top - desiredTop;
+            if (Math.abs(delta) > SCROLL_TOLERANCIA) {
+                const targetScroll = getScrollTop() + delta;
+                animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+            }
+        }
     }
 
     function getCharPosition(elem, charIndex) {
