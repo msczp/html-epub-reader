@@ -350,13 +350,13 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="pixel-scroll-indicator"></div>
 
-<!-- ========== SCROLL LÍNEA A LÍNEA (fluido, sin pausas) ========== -->
+<!-- ========== SCROLL LÍNEA A LÍNEA (mejorado) ========== -->
 <script>
 (function() {
     'use strict';
 
-    const LERP_FACTOR = 0.12;          // suavidad (0-1) – más bajo = más suave
-    const SCROLL_TARGET = 0.42;        // posición vertical deseada
+    const LERP_FACTOR = 0.2;          // ligeramente más rápido para que sea perceptible
+    const SCROLL_TARGET = 0.42;
 
     let targetScroll = 0;
     let smoothScrollActive = false;
@@ -368,13 +368,11 @@
         return container;
     }
 
-    // Iniciar bucle de desplazamiento suave
     window.startSmoothScroll = function() {
         if (smoothScrollActive) return;
         smoothScrollActive = true;
         const cont = getContainer();
-        // Inicializar target con la posición actual
-        targetScroll = cont.scrollTop;
+        targetScroll = cont.scrollTop;   // comenzar desde la posición actual
         function step() {
             if (!smoothScrollActive) {
                 smoothScrollRAF = null;
@@ -382,10 +380,8 @@
             }
             const cont = getContainer();
             const current = cont.scrollTop;
-            // Interpolar hacia el objetivo (movimiento nunca se detiene completamente)
             const newScroll = current + (targetScroll - current) * LERP_FACTOR;
-            // Si la diferencia es muy pequeña, forzar al objetivo para evitar vibración
-            if (Math.abs(targetScroll - newScroll) < 0.1) {
+            if (Math.abs(targetScroll - newScroll) < 0.05) {
                 cont.scrollTop = targetScroll;
             } else {
                 cont.scrollTop = newScroll;
@@ -411,14 +407,11 @@
         const contRect = cont.getBoundingClientRect();
         const contentHeight = contHeight - pTop;
         const desiredTop = contRect.top + pTop + contentHeight * SCROLL_TARGET;
-        // Calcular el scroll necesario para que la palabra esté en desiredTop
         targetScroll = cont.scrollTop + (wordRect.top - desiredTop);
-        // Limitar al rango válido
         const maxScroll = cont.scrollHeight - cont.clientHeight;
         targetScroll = Math.max(0, Math.min(targetScroll, maxScroll));
     };
 
-    // Pausar/reanudar (para scroll manual)
     window.pauseSmoothScroll = function() {
         window.stopSmoothScroll();
     };
@@ -427,11 +420,10 @@
             window.startSmoothScroll();
         }
     };
-
 })();
 </script>
 
-<!-- ========== TTS con scroll línea a línea ========== -->
+<!-- ========== TTS con actualización continua ========== -->
 <script>
 (function() {
     'use strict';
@@ -744,10 +736,13 @@
         window.leyendo = true;
         requestWakeLock();
 
-        // Posicionar el párrafo al 42% (sin animación extra, ya que el smooth scroll se encargará)
+        // Posicionar el párrafo al 42%
         scrollElementoAlPorcentaje(parrafo, 0.42);
         // Iniciar el scroll suave
         window.startSmoothScroll();
+        // Forzar primer objetivo con la primera palabra
+        const firstRect = getCharPosition(parrafo, 0);
+        if (firstRect) window.updateScrollTarget(firstRect);
 
         procesarSiguienteBloque();
     }
@@ -794,6 +789,8 @@
         }
 
         window.startSmoothScroll();
+        const firstRect = getCharPosition(parrafo, charIndex);
+        if (firstRect) window.updateScrollTarget(firstRect);
 
         leerBloque(idx, (exito) => {
             if (exito) {
@@ -895,7 +892,6 @@
         contenedor.addEventListener('touchstart', function(e) {
             didMove = false;
             window.isManualScrolling = false;
-            // Pausar el scroll suave mientras se hace scroll manual
             window.pauseSmoothScroll();
         }, { passive: true });
 
@@ -909,7 +905,6 @@
 
             if (didMove) {
                 window.isManualScrolling = false;
-                // Reanudar el scroll suave después de un breve retardo
                 clearTimeout(autoResumeTimer);
                 autoResumeTimer = setTimeout(() => {
                     window.resumeSmoothScroll();
@@ -917,7 +912,6 @@
                 return;
             }
 
-            // Toque sin movimiento: comportamiento de doble toque / un toque
             const touch = e.changedTouches[0];
             const elem = document.elementFromPoint(touch.clientX, touch.clientY);
             if (!elem || !elem.closest(CONTENEDOR)) return;
