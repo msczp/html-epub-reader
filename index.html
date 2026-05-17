@@ -351,7 +351,7 @@
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 <div id="pixel-scroll-indicator"></div>
 
-<!-- ========== AUTO‑SCROLL ========== -->
+<!-- ========== AUTO‑SCROLL (sin indicador al iniciar) ========== -->
 <script>
 (function() {
     'use strict';
@@ -415,7 +415,7 @@
             const container = getScrollContainer();
             state.currentScrollTop = container.scrollTop;
             state.animationFrameId = requestAnimationFrame(smoothScrollStep);
-            showIndicator(speed);
+            // No mostrar indicador al iniciar automáticamente
         }
     };
 
@@ -497,7 +497,7 @@
         if (idx >= 0 && idx < SCROLL_SPEEDS.length) {
             currentSpeedIndex = idx;
             speed = SCROLL_SPEEDS[idx];
-            showIndicator(speed);
+            showIndicator(speed); // mostrar solo cuando el usuario lo cambia manualmente
             try { localStorage.setItem('reader_scroll_speed_index', idx); } catch(e) {}
         }
     };
@@ -531,7 +531,7 @@
 })();
 </script>
 
-<!-- ========== TTS con umbrales 15‑85 % ========== -->
+<!-- ========== TTS (sin pausas forzadas) ========== -->
 <script>
 (function() {
     'use strict';
@@ -555,9 +555,7 @@
     const PAUSA_SEPARADOR = 1200;
     const LONGITUD_MINIMA_TEXTO = 1;
     const SCROLL_PORCENTAJE = 0.42;
-    const PAUSA_ENTRE_ORACIONES = 200;
 
-    // Nuevos umbrales
     const SNAP_UPPER = 0.15;
     const SNAP_LOWER = 0.85;
 
@@ -577,7 +575,6 @@
     window.isManualScrolling = false;
 
     let autoResumeTimer = null;
-    let sentenceTimeout = null;
     let fallbackScrollTimer = null;
 
     let currentReadingElem = null;
@@ -731,25 +728,27 @@
         return lista;
     }
 
-    function splitIntoSentences(text) {
-        const cleaned = text.replace(/([.!?]+)/g, '.');
-        const sentences = cleaned.split(/(?<=[.!?])\s+/);
-        return sentences.filter(s => s.trim().length > 0);
-    }
+    function leerBloque(indice, callback, innerStartOffset = 0) {
+        if (!leyendo) return callback(false);
+        const bloque = bloques[indice];
+        if (!bloque) return callback(false);
 
-    function speakSentenceQueue(sentences, index, callback, baseCharOffset) {
-        if (!leyendo) {
-            if (sentenceTimeout) clearTimeout(sentenceTimeout);
-            return callback(false);
+        if (bloque.tipo === 'separador') {
+            setTimeout(() => callback(true), PAUSA_SEPARADOR);
+            return;
         }
-        if (index >= sentences.length) {
+        if (bloque.tipo === 'imagen') {
             callback(true);
             return;
         }
 
-        const sentence = sentences[index];
-        const charOffset = sentences.slice(0, index).reduce((sum, s) => sum + s.length + 1, 0);
-        const u = new SpeechSynthesisUtterance(sentence);
+        currentReadingElem = bloque.elemento;
+        currentStartOffset = innerStartOffset;
+
+        let fullText = bloque.texto.replace(/\//g, ', ');
+        const textoParaLeer = fullText.substring(innerStartOffset);
+
+        const u = new SpeechSynthesisUtterance(textoParaLeer);
         u.lang = 'es-ES';
         u.rate = velocidadTTS;
         u.pitch = 1.0;
@@ -765,7 +764,7 @@
         u.onboundary = function(event) {
             if (!leyendo || window.isManualScrolling || !currentReadingElem) return;
             if (event.name === 'word' || event.name === 'sentence') {
-                const globalChar = baseCharOffset + charOffset + event.charIndex;
+                const globalChar = innerStartOffset + event.charIndex;
                 const charPos = getCharPosition(currentReadingElem, globalChar);
                 if (!charPos) return;
                 const container = document.querySelector(CONTENEDOR);
@@ -787,56 +786,15 @@
 
         u.onend = () => {
             utterance = null;
-            if (index < sentences.length - 1) {
-                if (sentenceTimeout) clearTimeout(sentenceTimeout);
-                sentenceTimeout = setTimeout(() => {
-                    sentenceTimeout = null;
-                    speakSentenceQueue(sentences, index + 1, callback, baseCharOffset);
-                }, PAUSA_ENTRE_ORACIONES);
-            } else {
-                speakSentenceQueue(sentences, index + 1, callback, baseCharOffset);
-            }
+            callback(true);
         };
         u.onerror = () => {
             utterance = null;
-            if (sentenceTimeout) clearTimeout(sentenceTimeout);
             callback(false);
         };
 
         utterance = u;
         speechSynthesis.speak(u);
-    }
-
-    function leerBloque(indice, callback, innerStartOffset = 0) {
-        if (!leyendo) return callback(false);
-        const bloque = bloques[indice];
-        if (!bloque) return callback(false);
-
-        if (bloque.tipo === 'separador') {
-            setTimeout(() => callback(true), PAUSA_SEPARADOR);
-            return;
-        }
-        if (bloque.tipo === 'imagen') {
-            callback(true);
-            return;
-        }
-
-        currentReadingElem = bloque.elemento;
-        currentStartOffset = innerStartOffset;
-
-        let fullText = bloque.texto.replace(/\//g, ', ');
-        const textoParaLeer = fullText.substring(innerStartOffset);
-
-        const sentences = splitIntoSentences(textoParaLeer);
-        if (sentences.length === 0) {
-            callback(true);
-            return;
-        }
-
-        speakSentenceQueue(sentences, 0, (exito) => {
-            utterance = null;
-            callback(exito);
-        }, innerStartOffset);
     }
 
     function procesarSiguienteBloque() {
@@ -961,7 +919,6 @@
         limpiarSeleccion();
         if (timeoutSig) clearTimeout(timeoutSig);
         if (speechSynthesis) speechSynthesis.cancel();
-        if (sentenceTimeout) clearTimeout(sentenceTimeout);
         if (fallbackScrollTimer) clearTimeout(fallbackScrollTimer);
         leyendo = false;
         window.leyendo = false;
