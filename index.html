@@ -344,7 +344,7 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS ORIGINAL CORREGIDO (velocidad ajustable) ========== -->
+<!-- ========== TTS ORIGINAL (scroll más lento: 800 ms) ========== -->
 <script>
 (function() {
     'use strict';
@@ -361,7 +361,7 @@
     const SELECTOR_SEPARADOR_TAG = 'hr';
     const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
 
-    let velocidadTTS = 2.0;   // ahora es modificable
+    let velocidadTTS = 2.0;
     const PAUSA_ENTRE_PARRAFOS = 150;
     const DOBLE_TOQUE_MAX = 300;
     const SCROLL_PORCENTAJE = 0.42;
@@ -373,7 +373,7 @@
     const CORRECCION_VELOCIDAD = 1.0;
 
     const FALLBACK_DELAY = 400;
-    const SCROLL_ANIMATION_MS = 500;
+    const SCROLL_ANIMATION_MS = 800;   // más lento (antes 500)
 
     let leyendo = false;
     let utterance = null;
@@ -400,7 +400,6 @@
     let speakerBtn = null;
     let selectionData = null;
 
-    // Exponer el setter y getter para el botón de velocidad
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
 
