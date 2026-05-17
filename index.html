@@ -344,7 +344,7 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS ORIGINAL: scroll palabra por palabra al 42% ========== -->
+<!-- ========== TTS ORIGINAL CORREGIDO (velocidad ajustable) ========== -->
 <script>
 (function() {
     'use strict';
@@ -361,7 +361,7 @@
     const SELECTOR_SEPARADOR_TAG = 'hr';
     const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
 
-    const VELOCIDAD = 2.0;
+    let velocidadTTS = 2.0;   // ahora es modificable
     const PAUSA_ENTRE_PARRAFOS = 150;
     const DOBLE_TOQUE_MAX = 300;
     const SCROLL_PORCENTAJE = 0.42;
@@ -400,8 +400,9 @@
     let speakerBtn = null;
     let selectionData = null;
 
-    window.setVelocidadTTS = function(v) { VELOCIDAD = v; };
-    window.getVelocidadTTS = function() { return VELOCIDAD; };
+    // Exponer el setter y getter para el botón de velocidad
+    window.setVelocidadTTS = function(v) { velocidadTTS = v; };
+    window.getVelocidadTTS = function() { return velocidadTTS; };
 
     // ========== SUPRESIÓN DEL MENÚ CONTEXTUAL ==========
     document.addEventListener('contextmenu', function(e) {
@@ -601,7 +602,7 @@
         startOffsetGlobal = innerStartOffset;
         const textoParaLeer = fullText.substring(startOffsetGlobal);
 
-        const charsPerSec = BASE_CHARS_PER_SEC * VELOCIDAD * CORRECCION_VELOCIDAD;
+        const charsPerSec = BASE_CHARS_PER_SEC * velocidadTTS * CORRECCION_VELOCIDAD;
         bloqueTotalDuration = (textoParaLeer.length / charsPerSec) * 1000;
         bloqueStartTime = performance.now();
 
@@ -612,7 +613,7 @@
 
         const u = new SpeechSynthesisUtterance(textoParaLeer);
         u.lang = 'es-ES';
-        u.rate = VELOCIDAD;
+        u.rate = velocidadTTS;
         u.pitch = 1.0;
 
         u.onboundary = function(event) {
