@@ -285,11 +285,6 @@
         .processing-card .spinner { width: 40px; height: 40px; border: 3px solid #eee; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .processing-card .msg { font-size: 0.95rem; color: #333; line-height: 1.4; padding: 0 4px; }
-
-        #pixel-scroll-indicator {
-            position: fixed; top: 20px; right: 20px; background: rgba(0,0,0,0.75); color: #fff; padding: 8px 18px; border-radius: 30px; font-size: 20px; font-weight: bold; z-index: 10000; opacity: 0; transition: opacity 0.25s; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        }
-        #pixel-scroll-indicator.visible { opacity: 1; }
     </style>
 </head>
 <body>
@@ -322,7 +317,6 @@
             <button class="opt-btn" id="btn-chapters" title="Capítulos">☰</button>
             <button class="opt-btn" id="btn-font-size" title="Tamaño de letra">Aa</button>
             <button class="opt-btn" id="btn-tts-speed" title="Velocidad de lectura">2x</button>
-            <button class="opt-btn" id="btn-scroll-speed" title="Velocidad de scroll">0.15</button>
             <button class="opt-btn" id="btn-fullscreen" title="Pantalla completa">⛶</button>
             <button class="opt-btn" id="btn-back-library" title="Volver a la biblioteca">⌘</button>
         </div>
@@ -349,189 +343,8 @@
 </div>
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
-<div id="pixel-scroll-indicator"></div>
 
-<!-- ========== AUTO‑SCROLL (sin indicador al iniciar) ========== -->
-<script>
-(function() {
-    'use strict';
-
-    const SCROLL_SPEEDS = [0.05, 0.1, 0.15, 0.25, 0.5, 0.75, 1, 2, 5, 10, 20];
-    let currentSpeedIndex = 2;
-    let speed = SCROLL_SPEEDS[currentSpeedIndex];
-
-    let state = {
-        isScrolling: false,
-        isPaused: false,
-        currentScrollTop: 0,
-        animationFrameId: null
-    };
-    let resumeTimerId = null;
-    let snapping = false;
-
-    const indicator = document.getElementById('pixel-scroll-indicator');
-
-    function showIndicator(s) {
-        if (!indicator) return;
-        indicator.textContent = s < 1 ? s.toFixed(2) : Math.round(s).toString();
-        indicator.classList.add('visible');
-        clearTimeout(window._scrollIndicatorTimeout);
-        window._scrollIndicatorTimeout = setTimeout(() => {
-            indicator.classList.remove('visible');
-        }, 1200);
-    }
-
-    function getScrollContainer() {
-        const rc = document.querySelector('#reader-container');
-        if (rc && rc.scrollHeight > rc.clientHeight) return rc;
-        return document.documentElement;
-    }
-
-    function smoothScrollStep() {
-        if (!state.isScrolling || state.isPaused || snapping) {
-            if (state.animationFrameId) {
-                cancelAnimationFrame(state.animationFrameId);
-                state.animationFrameId = null;
-            }
-            return;
-        }
-        const container = getScrollContainer();
-        state.currentScrollTop += speed;
-        const maxScroll = container.scrollHeight - container.clientHeight;
-        if (state.currentScrollTop >= maxScroll) {
-            state.currentScrollTop = maxScroll;
-            container.scrollTop = maxScroll;
-            window.stopAutoScrollPermanently();
-            return;
-        }
-        container.scrollTop = state.currentScrollTop;
-        state.animationFrameId = requestAnimationFrame(smoothScrollStep);
-    }
-
-    window.startScroll = function() {
-        if (!state.isScrolling) {
-            state.isScrolling = true;
-            state.isPaused = false;
-            const container = getScrollContainer();
-            state.currentScrollTop = container.scrollTop;
-            state.animationFrameId = requestAnimationFrame(smoothScrollStep);
-            // No mostrar indicador automáticamente
-        }
-    };
-
-    window.stopAutoScrollPermanently = function() {
-        state.isScrolling = false;
-        state.isPaused = false;
-        if (state.animationFrameId) {
-            cancelAnimationFrame(state.animationFrameId);
-            state.animationFrameId = null;
-        }
-        if (resumeTimerId) {
-            clearTimeout(resumeTimerId);
-            resumeTimerId = null;
-        }
-        snapping = false;
-    };
-
-    window.pauseAutoScroll = function() {
-        if (state.isScrolling) {
-            state.isPaused = true;
-            if (state.animationFrameId) {
-                cancelAnimationFrame(state.animationFrameId);
-                state.animationFrameId = null;
-            }
-            if (resumeTimerId) {
-                clearTimeout(resumeTimerId);
-                resumeTimerId = null;
-            }
-        }
-    };
-
-    window.resumeAutoScroll = function() {
-        if (state.isScrolling && state.isPaused) {
-            state.isPaused = false;
-            const container = getScrollContainer();
-            state.currentScrollTop = container.scrollTop;
-            state.animationFrameId = requestAnimationFrame(smoothScrollStep);
-        }
-    };
-
-    window.animateScrollSnap = function(targetScroll, duration) {
-        if (snapping) return;
-        snapping = true;
-
-        const wasScrolling = state.isScrolling;
-        if (wasScrolling) {
-            state.isPaused = true;
-            if (state.animationFrameId) {
-                cancelAnimationFrame(state.animationFrameId);
-                state.animationFrameId = null;
-            }
-        }
-
-        const container = getScrollContainer();
-        const start = container.scrollTop;
-        const change = targetScroll - start;
-        const startTime = performance.now();
-
-        function step(now) {
-            const elapsed = now - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-            const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-            container.scrollTop = start + change * ease;
-            if (progress < 1) {
-                requestAnimationFrame(step);
-            } else {
-                snapping = false;
-                if (wasScrolling) {
-                    state.isPaused = false;
-                    state.currentScrollTop = container.scrollTop;
-                    state.animationFrameId = requestAnimationFrame(smoothScrollStep);
-                }
-            }
-        }
-        requestAnimationFrame(step);
-    };
-
-    window.setScrollSpeed = function(idx) {
-        if (idx >= 0 && idx < SCROLL_SPEEDS.length) {
-            currentSpeedIndex = idx;
-            speed = SCROLL_SPEEDS[idx];
-            showIndicator(speed); // mostrar solo cuando el usuario lo cambia manualmente
-            try { localStorage.setItem('reader_scroll_speed_index', idx); } catch(e) {}
-        }
-    };
-    window.getScrollSpeedIndex = function() { return currentSpeedIndex; };
-    window.getScrollSpeedValue = function() { return speed; };
-
-    try {
-        const saved = localStorage.getItem('reader_scroll_speed_index');
-        if (saved !== null) {
-            const idx = parseInt(saved);
-            if (idx >= 0 && idx < SCROLL_SPEEDS.length) {
-                currentSpeedIndex = idx;
-                speed = SCROLL_SPEEDS[idx];
-            }
-        }
-    } catch(e) {}
-
-    const $btnScrollSpeed = document.getElementById('btn-scroll-speed');
-    if ($btnScrollSpeed) {
-        $btnScrollSpeed.textContent = speed < 1 ? speed.toFixed(2) : Math.round(speed).toString();
-        $btnScrollSpeed.addEventListener('click', () => {
-            currentSpeedIndex = (currentSpeedIndex + 1) % SCROLL_SPEEDS.length;
-            speed = SCROLL_SPEEDS[currentSpeedIndex];
-            $btnScrollSpeed.textContent = speed < 1 ? speed.toFixed(2) : Math.round(speed).toString();
-            showIndicator(speed);
-            try { localStorage.setItem('reader_scroll_speed_index', currentSpeedIndex); } catch(e) {}
-        });
-    }
-
-    console.log('Auto-scroll listo. Velocidad:', speed);
-})();
-</script>
-
-<!-- ========== TTS ORIGINAL (palabra por palabra al 42%) ========== -->
+<!-- ========== TTS ORIGINAL: scroll palabra por palabra al 42% ========== -->
 <script>
 (function() {
     'use strict';
@@ -548,47 +361,49 @@
     const SELECTOR_SEPARADOR_TAG = 'hr';
     const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
 
-    let velocidadTTS = 2.0;
+    const VELOCIDAD = 2.0;
     const PAUSA_ENTRE_PARRAFOS = 150;
     const DOBLE_TOQUE_MAX = 300;
+    const SCROLL_PORCENTAJE = 0.42;
+    const SCROLL_TOLERANCIA = 5;
     const PAUSA_IMAGEN = 1000;
     const PAUSA_SEPARADOR = 1200;
     const LONGITUD_MINIMA_TEXTO = 1;
-    const SCROLL_PORCENTAJE = 0.42;
-    const SCROLL_TOLERANCIA = 5;
     const BASE_CHARS_PER_SEC = 12.5;
     const CORRECCION_VELOCIDAD = 1.0;
+
     const FALLBACK_DELAY = 400;
-    const SCROLL_ANIMATION_MS = 400;  // duración del snap
+    const SCROLL_ANIMATION_MS = 500;
 
     let leyendo = false;
-    window.leyendo = false;
     let utterance = null;
     let bloques = [];
     let indiceBloque = -1;
     let timeoutSig = null;
     let ultimoToque = 0;
     let toqueTimer = null;
+    let scrollContainer = null;
     let wakeLock = null;
 
-    let speakerBtn = null;
-    let selectionData = null;
-    let didMove = false;
-    window.isManualScrolling = false;
-
-    let autoResumeTimer = null;
-    let fallbackScrollTimer = null;
-
-    // Variables para el tracking palabra por palabra
     let currentElem = null;
     let fullText = '';
     let startOffsetGlobal = 0;
+
+    let onboundaryActive = false;
+    let fallbackTimer = null;
+    let lastBoundaryTime = 0;
+    let isAnimating = false;
+    let animFrameId = null;
     let bloqueStartTime = 0;
     let bloqueTotalDuration = 0;
 
-    window.setVelocidadTTS = function(v) { velocidadTTS = v; };
-    window.getVelocidadTTS = function() { return velocidadTTS; };
+    let speakerBtn = null;
+    let selectionData = null;
 
+    window.setVelocidadTTS = function(v) { VELOCIDAD = v; };
+    window.getVelocidadTTS = function() { return VELOCIDAD; };
+
+    // ========== SUPRESIÓN DEL MENÚ CONTEXTUAL ==========
     document.addEventListener('contextmenu', function(e) {
         const selection = window.getSelection();
         if (!selection || selection.isCollapsed) return;
@@ -611,6 +426,20 @@
     `;
     document.head.appendChild(styleEl);
 
+    // ========== ELIMINACIÓN DE IDs ==========
+    function eliminarIDs(container) {
+        if (!container) return;
+        container.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+    }
+    function observarYLimpiar() {
+        const container = document.querySelector(CONTENEDOR);
+        if (!container) return;
+        const observer = new MutationObserver(() => eliminarIDs(container));
+        observer.observe(container, { childList: true, subtree: true });
+        eliminarIDs(container);
+    }
+
+    // ========== WAKE LOCK ==========
     async function requestWakeLock() {
         if ('wakeLock' in navigator) {
             try {
@@ -623,41 +452,76 @@
         if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     }
 
-    function getScrollContainer() {
-        return document.querySelector(CONTENEDOR) || window;
+    // ========== SCROLL UTILITIES ==========
+    function obtenerScrollContainer() {
+        const contenedor = document.querySelector(CONTENEDOR);
+        if (!contenedor) return window;
+        const style = getComputedStyle(contenedor);
+        if (style.overflowY === 'auto' || style.overflowY === 'scroll' || contenedor.scrollHeight > contenedor.clientHeight) {
+            return contenedor;
+        }
+        return window;
     }
 
     function getScrollTop() {
-        const c = getScrollContainer();
-        return c === window ? window.scrollY : c.scrollTop;
-    }
-    function setScrollTop(value) {
-        const c = getScrollContainer();
-        if (c === window) window.scrollTo(0, value);
-        else c.scrollTop = value;
+        return scrollContainer === window ? window.scrollY : scrollContainer.scrollTop;
     }
 
-    function scrollElementoAlPorcentaje(elem, porcentaje) {
-        if (!elem) return;
-        const container = getScrollContainer();
+    function setScrollTop(value) {
+        if (scrollContainer === window) {
+            window.scrollTo(0, value);
+        } else {
+            scrollContainer.scrollTop = value;
+        }
+    }
+
+    function animateScrollTo(targetScroll, duration) {
+        if (isAnimating) {
+            cancelAnimationFrame(animFrameId);
+            isAnimating = false;
+        }
+        const start = getScrollTop();
+        const change = targetScroll - start;
+        if (Math.abs(change) < 0.5) return;
+
+        const startTime = performance.now();
+        isAnimating = true;
+
+        function step(now) {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            setScrollTop(start + change * ease);
+
+            if (progress < 1) {
+                animFrameId = requestAnimationFrame(step);
+            } else {
+                isAnimating = false;
+                animFrameId = null;
+            }
+        }
+        animFrameId = requestAnimationFrame(step);
+    }
+
+    function ajustarScrollAPalabra(globalChar) {
+        if (!currentElem) return;
+        const charPos = getCharPosition(currentElem, globalChar);
+        if (!charPos) return;
+
+        const container = document.querySelector(CONTENEDOR);
+        if (!container) return;
         const cs = getComputedStyle(container);
         const pTop = parseFloat(cs.paddingTop) || 0;
         const contHeight = container.clientHeight;
         const contRect = container.getBoundingClientRect();
         const contentHeight = contHeight - pTop;
-        const desiredTop = contRect.top + pTop + contentHeight * porcentaje;
+        const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
 
-        const firstCharTop = elem.getBoundingClientRect().top;
-        const currentScroll = getScrollTop();
-        let targetScroll;
-        if (container === window) {
-            targetScroll = currentScroll + firstCharTop - desiredTop;
-        } else {
-            const contRect2 = container.getBoundingClientRect();
-            const relativeTop = firstCharTop - contRect2.top;
-            targetScroll = currentScroll + relativeTop - (desiredTop - contRect2.top);
-        }
-        setScrollTop(Math.max(0, targetScroll));
+        const delta = charPos.top - desiredTop;
+        if (Math.abs(delta) <= SCROLL_TOLERANCIA) return;
+
+        const targetScroll = getScrollTop() + delta;
+        animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
     }
 
     function getCharPosition(elem, charIndex) {
@@ -680,27 +544,7 @@
         return null;
     }
 
-    function ajustarScrollAPalabra(globalChar) {
-        if (!currentElem) return;
-        const charPos = getCharPosition(currentElem, globalChar);
-        if (!charPos) return;
-
-        const container = document.querySelector(CONTENEDOR);
-        if (!container) return;
-        const cs = getComputedStyle(container);
-        const pTop = parseFloat(cs.paddingTop) || 0;
-        const contHeight = container.clientHeight;
-        const contRect = container.getBoundingClientRect();
-        const contentHeight = contHeight - pTop;
-        const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
-
-        const delta = charPos.top - desiredTop;
-        if (Math.abs(delta) <= SCROLL_TOLERANCIA) return;
-
-        const targetScroll = getScrollTop() + delta;
-        window.animateScrollSnap(targetScroll, SCROLL_ANIMATION_MS);
-    }
-
+    // ========== GESTIÓN DE BLOQUES ==========
     function obtenerBloques() {
         const contenedor = document.querySelector(CONTENEDOR);
         if (!contenedor) return [];
@@ -708,13 +552,9 @@
             `${SELECTORES_TEXTO}, ${SELECTORES_IMAGEN}, ${SELECTOR_SEPARADOR_TAG}`
         );
         const lista = [];
-        const procesados = new WeakSet();
+        const textosVistos = new Set();
         for (const el of elementos) {
-            if (procesados.has(el)) continue;
-            procesados.add(el);
-
-            const style = getComputedStyle(el);
-            if (style.display === 'none' || style.visibility === 'hidden' || el.offsetParent === null && style.display === 'none') continue;
+            if (el.offsetParent === null && getComputedStyle(el).display === 'none') continue;
 
             if (el.tagName === 'HR') {
                 lista.push({ tipo: 'separador', elemento: el });
@@ -731,6 +571,9 @@
                 continue;
             }
             if (texto.length < LONGITUD_MINIMA_TEXTO) continue;
+            const key = el.tagName + '|' + texto;
+            if (textosVistos.has(key)) continue;
+            textosVistos.add(key);
 
             lista.push({ tipo: 'texto', elemento: el, texto });
         }
@@ -743,10 +586,12 @@
         if (!bloque) return callback(false);
 
         if (bloque.tipo === 'separador') {
+            detenerSincronizacion();
             setTimeout(() => callback(true), PAUSA_SEPARADOR);
             return;
         }
         if (bloque.tipo === 'imagen') {
+            detenerSincronizacion();
             callback(true);
             return;
         }
@@ -756,61 +601,69 @@
         startOffsetGlobal = innerStartOffset;
         const textoParaLeer = fullText.substring(startOffsetGlobal);
 
-        const charsPerSec = BASE_CHARS_PER_SEC * velocidadTTS * CORRECCION_VELOCIDAD;
+        const charsPerSec = BASE_CHARS_PER_SEC * VELOCIDAD * CORRECCION_VELOCIDAD;
         bloqueTotalDuration = (textoParaLeer.length / charsPerSec) * 1000;
         bloqueStartTime = performance.now();
 
+        onboundaryActive = false;
+        lastBoundaryTime = 0;
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+
         const u = new SpeechSynthesisUtterance(textoParaLeer);
         u.lang = 'es-ES';
-        u.rate = velocidadTTS;
+        u.rate = VELOCIDAD;
         u.pitch = 1.0;
 
-        u.onstart = function() {
-            if (window.startScroll) window.startScroll();
-            if (fallbackScrollTimer) {
-                clearTimeout(fallbackScrollTimer);
-                fallbackScrollTimer = null;
-            }
-        };
-
         u.onboundary = function(event) {
-            if (!leyendo || window.isManualScrolling || !currentElem) return;
+            if (!leyendo || !currentElem) return;
+            onboundaryActive = true;
+            lastBoundaryTime = performance.now();
             if (event.name === 'word' || event.name === 'sentence') {
                 const globalChar = event.charIndex + startOffsetGlobal;
                 ajustarScrollAPalabra(globalChar);
             }
         };
 
-        // Fallback: estimar posición usando el tiempo transcurrido
         function startFallback() {
-            if (fallbackScrollTimer) clearTimeout(fallbackScrollTimer);
-            fallbackScrollTimer = setTimeout(() => {
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            fallbackTimer = setTimeout(() => {
                 if (!leyendo || !currentElem) return;
                 const ahora = performance.now();
-                const elapsed = ahora - bloqueStartTime;
-                const progress = Math.min(elapsed / bloqueTotalDuration, 1);
-                const estimatedGlobalChar = Math.floor(progress * (fullText.length - startOffsetGlobal)) + startOffsetGlobal;
-                ajustarScrollAPalabra(estimatedGlobalChar);
+                if (!onboundaryActive || (ahora - lastBoundaryTime > 700)) {
+                    const elapsed = ahora - bloqueStartTime;
+                    const progress = Math.min(elapsed / bloqueTotalDuration, 1);
+                    const estimatedGlobalChar = Math.floor(progress * (fullText.length - startOffsetGlobal)) + startOffsetGlobal;
+                    ajustarScrollAPalabra(estimatedGlobalChar);
+                }
                 if (leyendo) {
-                    fallbackScrollTimer = setTimeout(startFallback, FALLBACK_DELAY);
+                    fallbackTimer = setTimeout(startFallback, FALLBACK_DELAY);
                 }
             }, FALLBACK_DELAY);
         }
         startFallback();
 
         u.onend = () => {
-            if (fallbackScrollTimer) clearTimeout(fallbackScrollTimer);
+            detenerSincronizacion();
             utterance = null;
             callback(true);
         };
         u.onerror = () => {
-            if (fallbackScrollTimer) clearTimeout(fallbackScrollTimer);
+            detenerSincronizacion();
             utterance = null;
             callback(false);
         };
 
         utterance = u;
         speechSynthesis.speak(u);
+    }
+
+    function detenerSincronizacion() {
+        clearTimeout(fallbackTimer);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        isAnimating = false;
+        animFrameId = null;
+        currentElem = null;
     }
 
     function procesarSiguienteBloque() {
@@ -824,6 +677,23 @@
         }
 
         const bloque = bloques[indiceBloque];
+        if (bloque.elemento) {
+            const firstChar = getCharPosition(bloque.elemento, 0);
+            if (firstChar) {
+                const container = document.querySelector(CONTENEDOR);
+                const cs = getComputedStyle(container);
+                const pTop = parseFloat(cs.paddingTop) || 0;
+                const contHeight = container.clientHeight;
+                const contRect = container.getBoundingClientRect();
+                const contentHeight = contHeight - pTop;
+                const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+                const delta = firstChar.top - desiredTop;
+                const targetScroll = getScrollTop() + delta;
+                animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+            } else {
+                scrollElementoAlPorcentaje(bloque.elemento, SCROLL_PORCENTAJE);
+            }
+        }
 
         let pausaPrevia = PAUSA_ENTRE_PARRAFOS;
         if (bloque.tipo === 'imagen') pausaPrevia = PAUSA_IMAGEN;
@@ -842,6 +712,42 @@
         }, pausaPrevia + 100);
     }
 
+    function scrollElementoAlPorcentaje(elem, porcentaje) {
+        if (!elem) return;
+        const container = document.querySelector(CONTENEDOR);
+        if (!container) return;
+        const cs = getComputedStyle(container);
+        const pTop = parseFloat(cs.paddingTop) || 0;
+        const contHeight = container.clientHeight;
+        const contRect = container.getBoundingClientRect();
+        const contentHeight = contHeight - pTop;
+        const desiredTop = contRect.top + pTop + contentHeight * porcentaje;
+
+        const textNode = elem.firstChild;
+        let firstCharTop;
+        if (textNode && textNode.nodeType === Node.TEXT_NODE && textNode.length > 0) {
+            const range = document.createRange();
+            range.setStart(textNode, 0);
+            range.setEnd(textNode, 1);
+            const rect = range.getClientRects()[0];
+            firstCharTop = rect ? rect.top : elem.getBoundingClientRect().top;
+        } else {
+            firstCharTop = elem.getBoundingClientRect().top;
+        }
+
+        const currentScroll = getScrollTop();
+        let targetScroll;
+        if (scrollContainer === window) {
+            targetScroll = currentScroll + firstCharTop - desiredTop;
+        } else {
+            const contRect2 = container.getBoundingClientRect();
+            const relativeTop = firstCharTop - contRect2.top;
+            targetScroll = currentScroll + relativeTop - (desiredTop - contRect2.top);
+        }
+        animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+    }
+
+    // ========== INICIAR / DETENER ==========
     function iniciar(parrafo) {
         ocultarBotonAltavoz();
         limpiarSeleccion();
@@ -859,9 +765,8 @@
         bloques = todos;
         indiceBloque = idx - 1;
         leyendo = true;
-        window.leyendo = true;
         requestWakeLock();
-
+        scrollContainer = obtenerScrollContainer();
         scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
         procesarSiguienteBloque();
     }
@@ -883,26 +788,21 @@
         bloques = todos;
         indiceBloque = idx;
         leyendo = true;
-        window.leyendo = true;
         requestWakeLock();
+        scrollContainer = obtenerScrollContainer();
 
-        const container = getScrollContainer();
-        const range = document.createRange();
-        const textNode = parrafo.firstChild;
-        if (textNode && textNode.nodeType === Node.TEXT_NODE && charIndex <= textNode.length) {
-            range.setStart(textNode, charIndex);
-            range.collapse(true);
-            const rect = range.getClientRects()[0];
-            if (rect) {
-                const cs = getComputedStyle(container);
-                const pTop = parseFloat(cs.paddingTop) || 0;
-                const contHeight = container.clientHeight;
-                const contRect = container.getBoundingClientRect();
-                const contentHeight = contHeight - pTop;
-                const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
-                const delta = rect.top - desiredTop;
-                setScrollTop(getScrollTop() + delta);
-            }
+        const pos = getCharPosition(parrafo, charIndex);
+        if (pos) {
+            const container = document.querySelector(CONTENEDOR);
+            const cs = getComputedStyle(container);
+            const pTop = parseFloat(cs.paddingTop) || 0;
+            const contHeight = container.clientHeight;
+            const contRect = container.getBoundingClientRect();
+            const contentHeight = contHeight - pTop;
+            const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+            const delta = pos.top - desiredTop;
+            const targetScroll = getScrollTop() + delta;
+            animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
         } else {
             scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE);
         }
@@ -919,16 +819,13 @@
         ocultarBotonAltavoz();
         limpiarSeleccion();
         if (timeoutSig) clearTimeout(timeoutSig);
+        detenerSincronizacion();
         if (speechSynthesis) speechSynthesis.cancel();
-        if (fallbackScrollTimer) clearTimeout(fallbackScrollTimer);
         leyendo = false;
-        window.leyendo = false;
         utterance = null;
         bloques = [];
         indiceBloque = -1;
         releaseWakeLock();
-
-        if (window.stopAutoScrollPermanently) window.stopAutoScrollPermanently();
     }
 
     function limpiarSeleccion() {
@@ -938,6 +835,7 @@
         }
     }
 
+    // ========== BOTÓN FLOTANTE ==========
     function crearBotonAltavoz() {
         if (speakerBtn) return;
         speakerBtn = document.createElement('div');
@@ -973,6 +871,7 @@
         selectionData = null;
     }
 
+    // ========== DETECCIÓN DE SELECCIÓN ==========
     function manejarSeleccion() {
         if (leyendo) { ocultarBotonAltavoz(); return; }
         const selection = window.getSelection();
@@ -1002,62 +901,9 @@
     document.addEventListener('mousedown', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
     document.addEventListener('touchstart', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
 
+    // ========== GESTOS TÁCTILES Y RATÓN ==========
     const contenedor = document.querySelector(CONTENEDOR);
     if (contenedor) {
-        contenedor.addEventListener('touchstart', function(e) {
-            didMove = false;
-            window.isManualScrolling = false;
-            if (window.pauseAutoScroll) {
-                clearTimeout(autoResumeTimer);
-                window.pauseAutoScroll();
-            }
-        }, { passive: true });
-
-        contenedor.addEventListener('touchmove', function(e) {
-            didMove = true;
-            window.isManualScrolling = true;
-        }, { passive: true });
-
-        contenedor.addEventListener('touchend', function(e) {
-            if (e.touches.length !== 0) return;
-
-            if (didMove) {
-                window.isManualScrolling = false;
-                if (window.resumeAutoScroll) {
-                    clearTimeout(autoResumeTimer);
-                    autoResumeTimer = setTimeout(() => {
-                        window.resumeAutoScroll();
-                    }, 200);
-                }
-                return;
-            }
-
-            const touch = e.changedTouches[0];
-            const elem = document.elementFromPoint(touch.clientX, touch.clientY);
-            if (!elem || !elem.closest(CONTENEDOR)) return;
-
-            const parrafo = elem.closest(SELECTORES_TEXTO);
-            if (!parrafo) return;
-
-            const ahora = Date.now();
-            const diff = ahora - ultimoToque;
-
-            if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
-                if (toqueTimer) clearTimeout(toqueTimer);
-                ocultarBotonAltavoz(); limpiarSeleccion();
-                e.preventDefault(); e.stopPropagation();
-                iniciar(parrafo);
-                ultimoToque = 0;
-            } else {
-                ultimoToque = ahora;
-                if (toqueTimer) clearTimeout(toqueTimer);
-                toqueTimer = setTimeout(() => {
-                    if (leyendo) detener();
-                    toqueTimer = null;
-                }, DOBLE_TOQUE_MAX);
-            }
-        }, { capture: true, passive: false });
-
         contenedor.addEventListener('dblclick', function(e) {
             ocultarBotonAltavoz();
             limpiarSeleccion();
@@ -1068,7 +914,33 @@
                 iniciar(parrafo);
             }
         }, { capture: true });
+
+        contenedor.addEventListener('touchend', function(e) {
+            const touch = e.changedTouches[0];
+            const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (!elem || !elem.closest(CONTENEDOR)) return;
+
+            const ahora = Date.now();
+            const diff = ahora - ultimoToque;
+
+            if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
+                if (toqueTimer) clearTimeout(toqueTimer);
+                ocultarBotonAltavoz(); limpiarSeleccion();
+                const parrafo = elem.closest(SELECTORES_TEXTO);
+                if (parrafo) {
+                    e.preventDefault(); e.stopPropagation(); iniciar(parrafo);
+                }
+                ultimoToque = 0;
+            } else {
+                ultimoToque = ahora;
+                if (toqueTimer) clearTimeout(toqueTimer);
+                toqueTimer = setTimeout(() => { if (leyendo) detener(); toqueTimer = null; }, DOBLE_TOQUE_MAX);
+            }
+        }, { capture: true, passive: false });
     }
+
+    observarYLimpiar();
+    scrollContainer = obtenerScrollContainer();
 })();
 </script>
 
@@ -1484,11 +1356,6 @@
 
             applyFontSizeToDocument();
             updateSpeedButton();
-            const $btnScrollSpeed = document.getElementById('btn-scroll-speed');
-            if ($btnScrollSpeed && window.getScrollSpeedValue) {
-                const val = window.getScrollSpeedValue();
-                $btnScrollSpeed.textContent = val < 1 ? val.toFixed(2) : Math.round(val).toString();
-            }
 
             const bookContent = $readerContainer.querySelector('.book-content');
             if (bookContent) {
