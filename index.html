@@ -55,13 +55,11 @@
         .comment-btn {
             position: absolute; top: 8px; right: 44px; width: 28px; height: 28px;
             border-radius: 50%; border: none; background: transparent; font-size: 1.2rem;
-            cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center; color: #999;
-            transition: background 0.2s, color 0.2s;
+            cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center;
+            color: #999; transition: background 0.2s, color 0.2s;
         }
-        /* Fondo oscuro cuando hay nota, se ve claramente diferente */
         .comment-btn.has-comment {
-            background: #333;
-            color: #fff;
+            background: #333; color: #fff;
         }
         .context-menu {
             display: none; position: absolute; top: 36px; right: 8px; background: var(--surface);
@@ -349,7 +347,7 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS SIN PAUSA ENTRE PÁRRAFOS (scroll y voz continuos) ========== -->
+<!-- ========== TTS SIN PAUSA ENTRE PÁRRAFOS ========== -->
 <script>
 (function() {
     'use strict';
@@ -367,7 +365,7 @@
     const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
 
     let velocidadTTS = 2.0;
-    const PAUSA_ENTRE_PARRAFOS = 0;            // pausa cero
+    const PAUSA_ENTRE_PARRAFOS = 0;            // cero pausa
     const DOBLE_TOQUE_MAX = 300;
     const SCROLL_PORCENTAJE = 0.42;
     const SCROLL_TOLERANCIA = 5;
@@ -694,7 +692,6 @@
             const targetScroll = getScrollTop() + delta;
             animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, onComplete);
         } else {
-            // Fallback: scroll al elemento
             const container = document.querySelector(CONTENEDOR);
             if (container) {
                 const elemRect = bloque.elemento.getBoundingClientRect();
@@ -722,21 +719,16 @@
 
         const bloque = bloques[indiceBloque];
 
-        // Para texto: iniciamos scroll (sin esperar) y arrancamos la voz inmediatamente
         if (bloque.tipo === 'texto') {
-            // Iniciar scroll sin esperar a que termine
             iniciarScrollHaciaBloque(bloque);
-
-            // Comenzar a leer sin demora
             timeoutSig = setTimeout(() => {
                 timeoutSig = null;
                 if (!leyendo) return;
                 leerBloque(indiceBloque, (exito) => {
                     if (exito) procesarSiguienteBloque();
                 });
-            }, 0); // cero pausa
+            }, 0);
         } else if (bloque.tipo === 'imagen') {
-            // Para imágenes esperamos el scroll y añadimos pausa
             iniciarScrollHaciaBloque(bloque, () => {
                 if (!leyendo) return;
                 timeoutSig = setTimeout(() => {
@@ -745,7 +737,6 @@
                 }, PAUSA_IMAGEN);
             });
         } else if (bloque.tipo === 'separador') {
-            // Para separadores solo pausa
             timeoutSig = setTimeout(() => {
                 timeoutSig = null;
                 procesarSiguienteBloque();
@@ -796,7 +787,6 @@
         requestWakeLock();
         scrollContainer = obtenerScrollContainer();
 
-        // Scroll inicial hasta la posición de la palabra, luego leer desde ese carácter
         const afterInitialScroll = () => {
             if (!leyendo) return;
             leerBloque(idx, (exito) => {
@@ -953,7 +943,7 @@
 })();
 </script>
 
-<!-- ========== LECTOR PRINCIPAL (orden por último abierto, icono comentarios mejorado) ========== -->
+<!-- ========== LECTOR PRINCIPAL (orden por último abierto, icono de comentarios claro) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
@@ -975,7 +965,7 @@
     function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
     function dbAddBook(d) { return new Promise((res, rej) => { const tx = db.transaction('books','readwrite'); tx.objectStore('books').put(d); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
     function dbGetBook(id) { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').get(id); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-    function dbGetAllBooks() { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').getAll(); r.onsuccess = () => { const books = r.result || []; // Ordenar por último abierto (más reciente primero), luego por fecha de añadido books.sort((a,b) => (b.lastOpened || b.dateAdded || 0) - (a.lastOpened || a.dateAdded || 0)); res(books); }; r.onerror = () => rej(r.error); }); }
+    function dbGetAllBooks() { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').getAll(); r.onsuccess = () => { const books = r.result || []; books.sort((a,b) => (b.lastOpened || b.dateAdded || 0) - (a.lastOpened || a.dateAdded || 0)); res(books); }; r.onerror = () => rej(r.error); }); }
     function dbDeleteBook(id) { return new Promise((res, rej) => { const tx = db.transaction(['books','progress','bookmarks'],'readwrite'); tx.objectStore('books').delete(id); tx.objectStore('progress').delete(id); const c = tx.objectStore('bookmarks').index('bookId').openCursor(IDBKeyRange.only(id)); c.onsuccess = e => { const cur = e.target.result; if (cur) { cur.delete(); cur.continue(); } }; tx.oncomplete = () => { try { localStorage.removeItem('last_progress_v91_'+id); } catch(e) {} res(); }; tx.onerror = () => rej(tx.error); }); }
     function dbSaveProgress(bid, data) { return new Promise((res, rej) => { const tx = db.transaction('progress','readwrite'); tx.objectStore('progress').put({ bookId: bid, ...data, updatedAt: Date.now() }); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
     function dbGetProgress(bid) { return new Promise((res, rej) => { const tx = db.transaction('progress','readonly'); const r = tx.objectStore('progress').get(bid); r.onsuccess = () => res(r.result || null); r.onerror = () => rej(r.error); }); }
@@ -1341,21 +1331,17 @@
         return current;
     }
 
-    async function openBookForReading(bookId) {
+    function openBookForReading(bookId) {
         if (saveTimer) clearTimeout(saveTimer); if (scrollRAF) cancelAnimationFrame(scrollRAF); cleanupScrollDetection(); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; }
         $readerContainer.innerHTML = ''; sectionDOMRefs = []; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; lastScroll = -1; currentBookId = bookId; optionsVisible = false; $optionsPanel.classList.remove('visible'); $searchInput.value = ''; $clearSearchBtn.classList.remove('visible');
         $backLinkBtn.classList.remove('show'); lastLinkScroll = null;
 
-        // Actualizar último acceso
-        dbGetBook(bookId).then(book => {
-            if (book) {
-                book.lastOpened = Date.now();
-                dbAddBook(book); // actualiza sin bloquear
-            }
-        });
-
         dbGetBook(bookId).then(bookData => {
             if (!bookData?.structure?.sections) { alert('El libro no tiene estructura válida.'); return; }
+            // Marcar último acceso
+            bookData.lastOpened = Date.now();
+            dbAddBook(bookData).catch(() => {}); // no interrumpe la lectura
+
             currentBookData = bookData; globalCharMapping = []; let charCounter = 0;
             bookData.structure.sections.forEach(sec => {
                 const pages = splitIntoPages(sec.htmlContent ? stripHtml(sec.htmlContent) : '', 2000);
@@ -1651,7 +1637,7 @@
     document.addEventListener('drop', async e => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file && file.name.endsWith('.epub')) { const book = await uploadAndProcessBook(file); if (book) renderLibrary(); } });
     window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage > 0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } });
 
-    (async () => { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader v91 + TTS listo'); })();
+    (async () => { try { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader listo'); } catch (e) { console.error('Error de inicio:', e); alert('No se pudo iniciar la biblioteca.'); } })();
 })();
 </script>
 </body>
