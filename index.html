@@ -344,7 +344,7 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS CORREGIDO (scroll único y sincronizado) ========== -->
+<!-- ========== TTS con pausa entre párrafos eliminada (scroll continuo) ========== -->
 <script>
 (function() {
     'use strict';
@@ -362,7 +362,7 @@
     const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
 
     let velocidadTTS = 2.0;
-    const PAUSA_ENTRE_PARRAFOS = 150;
+    const PAUSA_ENTRE_PARRAFOS = 0;            // <-- pausa eliminada para continuidad
     const DOBLE_TOQUE_MAX = 300;
     const SCROLL_PORCENTAJE = 0.42;
     const SCROLL_TOLERANCIA = 5;
@@ -729,6 +729,7 @@
             if (bloque.tipo === 'imagen') pausaPrevia = PAUSA_IMAGEN;
             else if (bloque.tipo === 'separador') pausaPrevia = 0;
 
+            // Usamos solo pausaPrevia, sin añadir 100ms extra
             timeoutSig = setTimeout(() => {
                 timeoutSig = null;
                 if (!leyendo) return;
@@ -739,7 +740,7 @@
                         if (exito) procesarSiguienteBloque();
                     });
                 }
-            }, pausaPrevia + 100);
+            }, pausaPrevia);
         };
 
         if (bloque.elemento) {
@@ -783,7 +784,6 @@
         leyendo = true;
         requestWakeLock();
         scrollContainer = obtenerScrollContainer();
-        // se elimina el scroll previo, lo hará procesarSiguienteBloque
         procesarSiguienteBloque();
     }
 
@@ -963,7 +963,7 @@
 })();
 </script>
 
-<!-- ========== LECTOR PRINCIPAL (sin cambios) ========== -->
+<!-- ========== LECTOR PRINCIPAL ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
