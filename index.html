@@ -56,12 +56,13 @@
             position: absolute; top: 8px; right: 44px; width: 28px; height: 28px;
             border-radius: 50%; border: none; background: transparent; font-size: 1.2rem;
             cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center;
-            color: #222;           /* color base */
-            opacity: 0.4;          /* semitransparente sin nota */
-            transition: opacity 0.2s;
+            color: #bbb;               /* sin nota: gris claro */
+            transition: background 0.2s, color 0.2s;
         }
+        /* Con nota: colores invertidos (fondo negro, icono blanco) */
         .comment-btn.has-comment {
-            opacity: 1;            /* totalmente nítido con nota */
+            background: #222;
+            color: #fff;
         }
         .context-menu {
             display: none; position: absolute; top: 36px; right: 8px; background: var(--surface);
@@ -911,7 +912,7 @@
 })();
 </script>
 
-<!-- ========== LECTOR PRINCIPAL (iconos corregidos, orden último abierto) ========== -->
+<!-- ========== LECTOR PRINCIPAL ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
