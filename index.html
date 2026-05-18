@@ -349,25 +349,43 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS SIN PAUSA ENTRE PÁRRAFOS ========== -->
+<!-- ========== TTS CON SELECTORES AMPLIADOS ========== -->
 <script>
 (function() {
     'use strict';
 
     const CONTENEDOR = '#reader-container';
+    // Selectores ampliados para cubrir la mayoría de estructuras en ePub
     const SELECTORES_TEXTO = [
-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'p', 'blockquote', 'li',
-        'div.title', 'div.chapter-title', 'div.carta', 'div.informe', 'div.fecha',
-        '[class*="heading"]', '[class*="title"]', '[class*="chapter"]',
-        'figcaption'
+        // Etiquetas básicas
+        'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'li', 'figcaption',
+        // Estructuras semánticas
+        'section', 'article', 'main', 'div', 'span',
+        // Clases comunes de ePub
+        '[class*="calibre"]', '[class*="chapter"]', '[class*="title"]',
+        '[class*="heading"]', '[class*="section"]', '[class*="text"]',
+        '[class*="content"]', '[class*="para"]', '[class*="body"]', '[class*="normal"]',
+        // Diálogos y transcripciones
+        '[class*="dialogue"]', '[class*="speaker"]', '[class*="transcript"]',
+        '[class*="timestamp"]', '[class*="line"]', '[class*="note"]', '[class*="annotation"]',
+        // Específicos para el libro (transcripciones policiales)
+        '[class*="detective"]', '[class*="voice"]', '[class*="unidentified"]',
+        '[class*="transcriptor"]', '[class*="silence"]', '[class*="sound"]',
+        '[class*="inaudible"]', '[class*="whisper"]', '[class*="cough"]',
+        // Formato inline relevante
+        'strong', 'b', 'em', 'i', 'u', 'code', 'pre',
+        // Tablas e índices
+        'nav', 'td', 'th', 'caption',
+        // Fallback para texto suelto (último recurso)
+        'div:not([class])', 'span:not([class])'
     ].join(', ');
+
     const SELECTORES_IMAGEN = 'img, figure, picture, svg, [class*="image"], [class*="img"], [class*="illustration"]';
     const SELECTOR_SEPARADOR_TAG = 'hr';
     const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
 
     let velocidadTTS = 2.0;
-    const PAUSA_ENTRE_PARRAFOS = 0;            // cero pausa
+    const PAUSA_ENTRE_PARRAFOS = 0;
     const DOBLE_TOQUE_MAX = 300;
     const SCROLL_PORCENTAJE = 0.42;
     const SCROLL_TOLERANCIA = 5;
@@ -688,12 +706,10 @@
         const bloque = bloques[indiceBloque];
 
         if (bloque.tipo === 'texto') {
-            // Leer directamente sin pre-scroll adicional (el scroll lo maneja la pronunciación)
             leerBloque(indiceBloque, (exito) => {
                 if (exito) procesarSiguienteBloque();
             });
         } else if (bloque.tipo === 'imagen') {
-            // Para imágenes sí hacemos un pequeño scroll previo
             const container = document.querySelector(CONTENEDOR);
             if (container && bloque.elemento) {
                 const elemRect = bloque.elemento.getBoundingClientRect();
@@ -756,7 +772,6 @@
         requestWakeLock();
         scrollContainer = obtenerScrollContainer();
 
-        // Mover la vista hasta la palabra seleccionada, luego leer
         const pos = getCharPosition(parrafo, charIndex);
         if (pos) {
             const container = document.querySelector(CONTENEDOR);
@@ -909,7 +924,7 @@
 })();
 </script>
 
-<!-- ========== LECTOR PRINCIPAL ========== -->
+<!-- ========== LECTOR PRINCIPAL (sin cambios) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
