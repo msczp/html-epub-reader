@@ -56,10 +56,12 @@
             position: absolute; top: 8px; right: 44px; width: 28px; height: 28px;
             border-radius: 50%; border: none; background: transparent; font-size: 1.2rem;
             cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center;
-            color: #999; transition: background 0.2s, color 0.2s;
+            color: #bbb;  /* sin nota: gris clarito */
+            transition: color 0.2s;
         }
         .comment-btn.has-comment {
-            background: #333; color: #fff;
+            color: #222;  /* con nota: negro intenso */
+            background: transparent;
         }
         .context-menu {
             display: none; position: absolute; top: 36px; right: 8px; background: var(--surface);
@@ -347,7 +349,7 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS SIN PAUSA ENTRE PÁRRAFOS ========== -->
+<!-- ========== TTS SIN PAUSA ENTRE PÁRRAFOS (scroll y voz 100% continuos) ========== -->
 <script>
 (function() {
     'use strict';
@@ -721,13 +723,10 @@
 
         if (bloque.tipo === 'texto') {
             iniciarScrollHaciaBloque(bloque);
-            timeoutSig = setTimeout(() => {
-                timeoutSig = null;
-                if (!leyendo) return;
-                leerBloque(indiceBloque, (exito) => {
-                    if (exito) procesarSiguienteBloque();
-                });
-            }, 0);
+            // lectura inmediata, sin esperas
+            leerBloque(indiceBloque, (exito) => {
+                if (exito) procesarSiguienteBloque();
+            });
         } else if (bloque.tipo === 'imagen') {
             iniciarScrollHaciaBloque(bloque, () => {
                 if (!leyendo) return;
@@ -943,7 +942,7 @@
 })();
 </script>
 
-<!-- ========== LECTOR PRINCIPAL (orden por último abierto, icono de comentarios claro) ========== -->
+<!-- ========== LECTOR PRINCIPAL (iconos de comentarios mejorados, orden por último abierto) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
@@ -1205,6 +1204,8 @@
                 if (book.coverBase64) coverHTML = `<img src="${book.coverBase64}" alt="portada" style="width:100%;height:100%;object-fit:contain;">`;
                 const card = document.createElement('div');
                 card.className = 'book-card'; card.dataset.bookId = book.id;
+                // bocadillo claro u oscuro según nota
+                const commentIcon = book.comment ? '💬' : '💬';
                 card.innerHTML = `<div class="cover">${coverHTML}</div>
                     <div class="info">
                         <div class="title">${escapeHtml(book.title)}</div>
@@ -1212,7 +1213,7 @@
                         <div class="progress-bar-wrap"><div class="progress-bar-fill" style="width:${percent}%"></div></div>
                         <div class="progress-text">${totalPages ? `Pág. ${currentPage} de ${totalPages} (${percent}%)` : 'Sin procesar'}</div>
                     </div>
-                    <button class="comment-btn ${book.comment ? 'has-comment' : ''}" title="Comentario">💬</button>
+                    <button class="comment-btn ${book.comment ? 'has-comment' : ''}" title="Comentario">${commentIcon}</button>
                     <button class="menu-btn" aria-label="Menú">☰</button>
                     <div class="context-menu">
                         <div class="context-menu-item download-item">Descargar ePub</div>
@@ -1338,9 +1339,8 @@
 
         dbGetBook(bookId).then(bookData => {
             if (!bookData?.structure?.sections) { alert('El libro no tiene estructura válida.'); return; }
-            // Marcar último acceso
             bookData.lastOpened = Date.now();
-            dbAddBook(bookData).catch(() => {}); // no interrumpe la lectura
+            dbAddBook(bookData).catch(() => {});
 
             currentBookData = bookData; globalCharMapping = []; let charCounter = 0;
             bookData.structure.sections.forEach(sec => {
