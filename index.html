@@ -56,8 +56,13 @@
             position: absolute; top: 8px; right: 44px; width: 28px; height: 28px;
             border-radius: 50%; border: none; background: transparent; font-size: 1.2rem;
             cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center; color: #999;
+            transition: background 0.2s, color 0.2s;
         }
-        .comment-btn.has-comment { color: #333; }
+        /* Fondo oscuro cuando hay nota, se ve claramente diferente */
+        .comment-btn.has-comment {
+            background: #333;
+            color: #fff;
+        }
         .context-menu {
             display: none; position: absolute; top: 36px; right: 8px; background: var(--surface);
             border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 10; min-width: 140px; padding: 4px 0;
@@ -344,7 +349,7 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS con pausa entre párrafos eliminada (scroll continuo) ========== -->
+<!-- ========== TTS SIN PAUSA ENTRE PÁRRAFOS (scroll y voz continuos) ========== -->
 <script>
 (function() {
     'use strict';
@@ -362,7 +367,7 @@
     const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
 
     let velocidadTTS = 2.0;
-    const PAUSA_ENTRE_PARRAFOS = 0;            // <-- pausa eliminada para continuidad
+    const PAUSA_ENTRE_PARRAFOS = 0;            // pausa cero
     const DOBLE_TOQUE_MAX = 300;
     const SCROLL_PORCENTAJE = 0.42;
     const SCROLL_TOLERANCIA = 5;
@@ -670,45 +675,39 @@
         currentElem = null;
     }
 
-    function scrollElementoAlPorcentaje(elem, porcentaje, onComplete) {
-        if (!elem) {
+    function iniciarScrollHaciaBloque(bloque, onComplete) {
+        if (!bloque || !bloque.elemento) {
             if (onComplete) onComplete();
             return;
         }
-        const container = document.querySelector(CONTENEDOR);
-        if (!container) {
-            if (onComplete) onComplete();
-            return;
-        }
-        const cs = getComputedStyle(container);
-        const pTop = parseFloat(cs.paddingTop) || 0;
-        const contHeight = container.clientHeight;
-        const contRect = container.getBoundingClientRect();
-        const contentHeight = contHeight - pTop;
-        const desiredTop = contRect.top + pTop + contentHeight * porcentaje;
 
-        const textNode = elem.firstChild;
-        let firstCharTop;
-        if (textNode && textNode.nodeType === Node.TEXT_NODE && textNode.length > 0) {
-            const range = document.createRange();
-            range.setStart(textNode, 0);
-            range.setEnd(textNode, 1);
-            const rect = range.getClientRects()[0];
-            firstCharTop = rect ? rect.top : elem.getBoundingClientRect().top;
+        const firstChar = getCharPosition(bloque.elemento, 0);
+        if (firstChar) {
+            const container = document.querySelector(CONTENEDOR);
+            const cs = getComputedStyle(container);
+            const pTop = parseFloat(cs.paddingTop) || 0;
+            const contHeight = container.clientHeight;
+            const contRect = container.getBoundingClientRect();
+            const contentHeight = contHeight - pTop;
+            const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+            const delta = firstChar.top - desiredTop;
+            const targetScroll = getScrollTop() + delta;
+            animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, onComplete);
         } else {
-            firstCharTop = elem.getBoundingClientRect().top;
+            // Fallback: scroll al elemento
+            const container = document.querySelector(CONTENEDOR);
+            if (container) {
+                const elemRect = bloque.elemento.getBoundingClientRect();
+                const contRect = container.getBoundingClientRect();
+                const cs = getComputedStyle(container);
+                const pTop = parseFloat(cs.paddingTop) || 0;
+                const desiredTop = contRect.top + pTop + (container.clientHeight - pTop) * SCROLL_PORCENTAJE;
+                const targetScroll = getScrollTop() + (elemRect.top - desiredTop);
+                animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, onComplete);
+            } else {
+                if (onComplete) onComplete();
+            }
         }
-
-        const currentScroll = getScrollTop();
-        let targetScroll;
-        if (scrollContainer === window) {
-            targetScroll = currentScroll + firstCharTop - desiredTop;
-        } else {
-            const contRect2 = container.getBoundingClientRect();
-            const relativeTop = firstCharTop - contRect2.top;
-            targetScroll = currentScroll + relativeTop - (desiredTop - contRect2.top);
-        }
-        animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, onComplete);
     }
 
     function procesarSiguienteBloque() {
@@ -723,44 +722,34 @@
 
         const bloque = bloques[indiceBloque];
 
-        const afterScroll = () => {
-            if (!leyendo) return;
-            let pausaPrevia = PAUSA_ENTRE_PARRAFOS;
-            if (bloque.tipo === 'imagen') pausaPrevia = PAUSA_IMAGEN;
-            else if (bloque.tipo === 'separador') pausaPrevia = 0;
+        // Para texto: iniciamos scroll (sin esperar) y arrancamos la voz inmediatamente
+        if (bloque.tipo === 'texto') {
+            // Iniciar scroll sin esperar a que termine
+            iniciarScrollHaciaBloque(bloque);
 
-            // Usamos solo pausaPrevia, sin añadir 100ms extra
+            // Comenzar a leer sin demora
             timeoutSig = setTimeout(() => {
                 timeoutSig = null;
                 if (!leyendo) return;
-                if (bloque.tipo === 'imagen' || bloque.tipo === 'separador') {
+                leerBloque(indiceBloque, (exito) => {
+                    if (exito) procesarSiguienteBloque();
+                });
+            }, 0); // cero pausa
+        } else if (bloque.tipo === 'imagen') {
+            // Para imágenes esperamos el scroll y añadimos pausa
+            iniciarScrollHaciaBloque(bloque, () => {
+                if (!leyendo) return;
+                timeoutSig = setTimeout(() => {
+                    timeoutSig = null;
                     procesarSiguienteBloque();
-                } else {
-                    leerBloque(indiceBloque, (exito) => {
-                        if (exito) procesarSiguienteBloque();
-                    });
-                }
-            }, pausaPrevia);
-        };
-
-        if (bloque.elemento) {
-            const firstChar = getCharPosition(bloque.elemento, 0);
-            if (firstChar) {
-                const container = document.querySelector(CONTENEDOR);
-                const cs = getComputedStyle(container);
-                const pTop = parseFloat(cs.paddingTop) || 0;
-                const contHeight = container.clientHeight;
-                const contRect = container.getBoundingClientRect();
-                const contentHeight = contHeight - pTop;
-                const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
-                const delta = firstChar.top - desiredTop;
-                const targetScroll = getScrollTop() + delta;
-                animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, afterScroll);
-            } else {
-                scrollElementoAlPorcentaje(bloque.elemento, SCROLL_PORCENTAJE, afterScroll);
-            }
-        } else {
-            afterScroll();
+                }, PAUSA_IMAGEN);
+            });
+        } else if (bloque.tipo === 'separador') {
+            // Para separadores solo pausa
+            timeoutSig = setTimeout(() => {
+                timeoutSig = null;
+                procesarSiguienteBloque();
+            }, PAUSA_SEPARADOR);
         }
     }
 
@@ -807,6 +796,7 @@
         requestWakeLock();
         scrollContainer = obtenerScrollContainer();
 
+        // Scroll inicial hasta la posición de la palabra, luego leer desde ese carácter
         const afterInitialScroll = () => {
             if (!leyendo) return;
             leerBloque(idx, (exito) => {
@@ -830,7 +820,7 @@
             const targetScroll = getScrollTop() + delta;
             animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, afterInitialScroll);
         } else {
-            scrollElementoAlPorcentaje(parrafo, SCROLL_PORCENTAJE, afterInitialScroll);
+            iniciarScrollHaciaBloque(bloques[idx], afterInitialScroll);
         }
     }
 
@@ -963,7 +953,7 @@
 })();
 </script>
 
-<!-- ========== LECTOR PRINCIPAL ========== -->
+<!-- ========== LECTOR PRINCIPAL (orden por último abierto, icono comentarios mejorado) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
@@ -985,7 +975,7 @@
     function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
     function dbAddBook(d) { return new Promise((res, rej) => { const tx = db.transaction('books','readwrite'); tx.objectStore('books').put(d); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
     function dbGetBook(id) { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').get(id); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-    function dbGetAllBooks() { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').getAll(); r.onsuccess = () => { const b = r.result || []; b.sort((a,b) => (b.dateAdded||0)-(a.dateAdded||0)); res(b); }; r.onerror = () => rej(r.error); }); }
+    function dbGetAllBooks() { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').getAll(); r.onsuccess = () => { const books = r.result || []; // Ordenar por último abierto (más reciente primero), luego por fecha de añadido books.sort((a,b) => (b.lastOpened || b.dateAdded || 0) - (a.lastOpened || a.dateAdded || 0)); res(books); }; r.onerror = () => rej(r.error); }); }
     function dbDeleteBook(id) { return new Promise((res, rej) => { const tx = db.transaction(['books','progress','bookmarks'],'readwrite'); tx.objectStore('books').delete(id); tx.objectStore('progress').delete(id); const c = tx.objectStore('bookmarks').index('bookId').openCursor(IDBKeyRange.only(id)); c.onsuccess = e => { const cur = e.target.result; if (cur) { cur.delete(); cur.continue(); } }; tx.oncomplete = () => { try { localStorage.removeItem('last_progress_v91_'+id); } catch(e) {} res(); }; tx.onerror = () => rej(tx.error); }); }
     function dbSaveProgress(bid, data) { return new Promise((res, rej) => { const tx = db.transaction('progress','readwrite'); tx.objectStore('progress').put({ bookId: bid, ...data, updatedAt: Date.now() }); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
     function dbGetProgress(bid) { return new Promise((res, rej) => { const tx = db.transaction('progress','readonly'); const r = tx.objectStore('progress').get(bid); r.onsuccess = () => res(r.result || null); r.onerror = () => rej(r.error); }); }
@@ -1202,7 +1192,7 @@
             const duplicado = books.find(b => b.title === structure.title && b.author === structure.author);
             if (duplicado) return null;
             showProcessing('Guardando…');
-            const bookData = { id: generateId(), title: structure.title, author: structure.author, coverBase64: structure.coverBase64, coverHref: structure.coverHref, coverDataUrl: structure.coverDataUrl, epubData: arrayBuffer, structure, dateAdded: Date.now(), comment: '' };
+            const bookData = { id: generateId(), title: structure.title, author: structure.author, coverBase64: structure.coverBase64, coverHref: structure.coverHref, coverDataUrl: structure.coverDataUrl, epubData: arrayBuffer, structure, dateAdded: Date.now(), lastOpened: Date.now(), comment: '' };
             try { await dbAddBook(bookData); } catch (err) { hideProcessing(); alert('Error al guardar: '+err.message); return null; }
             hideProcessing(); return bookData;
         } finally { $uploadFab.disabled = false; }
@@ -1351,10 +1341,18 @@
         return current;
     }
 
-    function openBookForReading(bookId) {
+    async function openBookForReading(bookId) {
         if (saveTimer) clearTimeout(saveTimer); if (scrollRAF) cancelAnimationFrame(scrollRAF); cleanupScrollDetection(); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; }
         $readerContainer.innerHTML = ''; sectionDOMRefs = []; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; lastScroll = -1; currentBookId = bookId; optionsVisible = false; $optionsPanel.classList.remove('visible'); $searchInput.value = ''; $clearSearchBtn.classList.remove('visible');
         $backLinkBtn.classList.remove('show'); lastLinkScroll = null;
+
+        // Actualizar último acceso
+        dbGetBook(bookId).then(book => {
+            if (book) {
+                book.lastOpened = Date.now();
+                dbAddBook(book); // actualiza sin bloquear
+            }
+        });
 
         dbGetBook(bookId).then(bookData => {
             if (!bookData?.structure?.sections) { alert('El libro no tiene estructura válida.'); return; }
