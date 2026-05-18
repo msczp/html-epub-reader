@@ -56,12 +56,12 @@
             position: absolute; top: 8px; right: 44px; width: 28px; height: 28px;
             border-radius: 50%; border: none; background: transparent; font-size: 1.2rem;
             cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center;
-            color: #bbb;  /* sin nota: gris clarito */
-            transition: color 0.2s;
+            color: #222;           /* color base */
+            opacity: 0.4;          /* semitransparente sin nota */
+            transition: opacity 0.2s;
         }
         .comment-btn.has-comment {
-            color: #222;  /* con nota: negro intenso */
-            background: transparent;
+            opacity: 1;            /* totalmente nítido con nota */
         }
         .context-menu {
             display: none; position: absolute; top: 36px; right: 8px; background: var(--surface);
@@ -349,7 +349,7 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS SIN PAUSA ENTRE PÁRRAFOS (scroll y voz 100% continuos) ========== -->
+<!-- ========== TTS SIN PAUSA ENTRE PÁRRAFOS ========== -->
 <script>
 (function() {
     'use strict';
@@ -675,40 +675,7 @@
         currentElem = null;
     }
 
-    function iniciarScrollHaciaBloque(bloque, onComplete) {
-        if (!bloque || !bloque.elemento) {
-            if (onComplete) onComplete();
-            return;
-        }
-
-        const firstChar = getCharPosition(bloque.elemento, 0);
-        if (firstChar) {
-            const container = document.querySelector(CONTENEDOR);
-            const cs = getComputedStyle(container);
-            const pTop = parseFloat(cs.paddingTop) || 0;
-            const contHeight = container.clientHeight;
-            const contRect = container.getBoundingClientRect();
-            const contentHeight = contHeight - pTop;
-            const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
-            const delta = firstChar.top - desiredTop;
-            const targetScroll = getScrollTop() + delta;
-            animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, onComplete);
-        } else {
-            const container = document.querySelector(CONTENEDOR);
-            if (container) {
-                const elemRect = bloque.elemento.getBoundingClientRect();
-                const contRect = container.getBoundingClientRect();
-                const cs = getComputedStyle(container);
-                const pTop = parseFloat(cs.paddingTop) || 0;
-                const desiredTop = contRect.top + pTop + (container.clientHeight - pTop) * SCROLL_PORCENTAJE;
-                const targetScroll = getScrollTop() + (elemRect.top - desiredTop);
-                animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, onComplete);
-            } else {
-                if (onComplete) onComplete();
-            }
-        }
-    }
-
+    // ========== NUEVA GESTIÓN DE BLOQUES (scroll cero pausas) ==========
     function procesarSiguienteBloque() {
         if (timeoutSig) clearTimeout(timeoutSig);
         if (!leyendo) return;
@@ -722,24 +689,28 @@
         const bloque = bloques[indiceBloque];
 
         if (bloque.tipo === 'texto') {
-            iniciarScrollHaciaBloque(bloque);
-            // lectura inmediata, sin esperas
+            // Sin pre-scroll; solo la lectura continua moverá la vista
             leerBloque(indiceBloque, (exito) => {
                 if (exito) procesarSiguienteBloque();
             });
         } else if (bloque.tipo === 'imagen') {
-            iniciarScrollHaciaBloque(bloque, () => {
-                if (!leyendo) return;
-                timeoutSig = setTimeout(() => {
-                    timeoutSig = null;
-                    procesarSiguienteBloque();
-                }, PAUSA_IMAGEN);
-            });
+            // Solo para imágenes hacemos un pequeño scroll antes
+            const container = document.querySelector(CONTENEDOR);
+            if (container && bloque.elemento) {
+                const elemRect = bloque.elemento.getBoundingClientRect();
+                const contRect = container.getBoundingClientRect();
+                const cs = getComputedStyle(container);
+                const pTop = parseFloat(cs.paddingTop) || 0;
+                const desiredTop = contRect.top + pTop + (container.clientHeight - pTop) * SCROLL_PORCENTAJE;
+                const targetScroll = getScrollTop() + (elemRect.top - desiredTop);
+                animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, () => {
+                    timeoutSig = setTimeout(() => procesarSiguienteBloque(), PAUSA_IMAGEN);
+                });
+            } else {
+                timeoutSig = setTimeout(() => procesarSiguienteBloque(), PAUSA_IMAGEN);
+            }
         } else if (bloque.tipo === 'separador') {
-            timeoutSig = setTimeout(() => {
-                timeoutSig = null;
-                procesarSiguienteBloque();
-            }, PAUSA_SEPARADOR);
+            timeoutSig = setTimeout(() => procesarSiguienteBloque(), PAUSA_SEPARADOR);
         }
     }
 
@@ -786,16 +757,7 @@
         requestWakeLock();
         scrollContainer = obtenerScrollContainer();
 
-        const afterInitialScroll = () => {
-            if (!leyendo) return;
-            leerBloque(idx, (exito) => {
-                if (exito) {
-                    indiceBloque = idx;
-                    procesarSiguienteBloque();
-                }
-            }, charIndex);
-        };
-
+        // Mover la vista hasta la palabra seleccionada, luego leer
         const pos = getCharPosition(parrafo, charIndex);
         if (pos) {
             const container = document.querySelector(CONTENEDOR);
@@ -807,9 +769,16 @@
             const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
             const delta = pos.top - desiredTop;
             const targetScroll = getScrollTop() + delta;
-            animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, afterInitialScroll);
+            animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, () => {
+                leerBloque(idx, (exito) => {
+                    if (exito) procesarSiguienteBloque();
+                }, charIndex);
+            });
         } else {
-            iniciarScrollHaciaBloque(bloques[idx], afterInitialScroll);
+            // Fallback: leer directamente
+            leerBloque(idx, (exito) => {
+                if (exito) procesarSiguienteBloque();
+            }, charIndex);
         }
     }
 
@@ -942,7 +911,7 @@
 })();
 </script>
 
-<!-- ========== LECTOR PRINCIPAL (iconos de comentarios mejorados, orden por último abierto) ========== -->
+<!-- ========== LECTOR PRINCIPAL (iconos corregidos, orden último abierto) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
@@ -1204,8 +1173,7 @@
                 if (book.coverBase64) coverHTML = `<img src="${book.coverBase64}" alt="portada" style="width:100%;height:100%;object-fit:contain;">`;
                 const card = document.createElement('div');
                 card.className = 'book-card'; card.dataset.bookId = book.id;
-                // bocadillo claro u oscuro según nota
-                const commentIcon = book.comment ? '💬' : '💬';
+                const commentIcon = '💬';
                 card.innerHTML = `<div class="cover">${coverHTML}</div>
                     <div class="info">
                         <div class="title">${escapeHtml(book.title)}</div>
