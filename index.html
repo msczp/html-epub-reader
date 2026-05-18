@@ -56,13 +56,12 @@
             position: absolute; top: 8px; right: 44px; width: 28px; height: 28px;
             border-radius: 50%; border: none; background: transparent; font-size: 1.2rem;
             cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center;
-            color: #bbb;               /* sin nota: gris claro */
-            transition: background 0.2s, color 0.2s;
+            color: #222;           /* color base */
+            opacity: 0.2;          /* 20% opacidad sin nota */
+            transition: opacity 0.2s;
         }
-        /* Con nota: colores invertidos (fondo negro, icono blanco) */
         .comment-btn.has-comment {
-            background: #222;
-            color: #fff;
+            opacity: 1;            /* totalmente nítido con nota */
         }
         .context-menu {
             display: none; position: absolute; top: 36px; right: 8px; background: var(--surface);
@@ -676,7 +675,6 @@
         currentElem = null;
     }
 
-    // ========== NUEVA GESTIÓN DE BLOQUES (scroll cero pausas) ==========
     function procesarSiguienteBloque() {
         if (timeoutSig) clearTimeout(timeoutSig);
         if (!leyendo) return;
@@ -690,12 +688,12 @@
         const bloque = bloques[indiceBloque];
 
         if (bloque.tipo === 'texto') {
-            // Sin pre-scroll; solo la lectura continua moverá la vista
+            // Leer directamente sin pre-scroll adicional (el scroll lo maneja la pronunciación)
             leerBloque(indiceBloque, (exito) => {
                 if (exito) procesarSiguienteBloque();
             });
         } else if (bloque.tipo === 'imagen') {
-            // Solo para imágenes hacemos un pequeño scroll antes
+            // Para imágenes sí hacemos un pequeño scroll previo
             const container = document.querySelector(CONTENEDOR);
             if (container && bloque.elemento) {
                 const elemRect = bloque.elemento.getBoundingClientRect();
@@ -776,7 +774,6 @@
                 }, charIndex);
             });
         } else {
-            // Fallback: leer directamente
             leerBloque(idx, (exito) => {
                 if (exito) procesarSiguienteBloque();
             }, charIndex);
