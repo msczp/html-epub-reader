@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>HTML ePub Reader</title>
+    <title>HTML ePub Reader - Con soporte MultiTTS</title>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <style>
         :root {
@@ -57,7 +57,7 @@
         #chapter-markers { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
         .chapter-marker-item { position: absolute; top: 0; width: 1px; height: 100%; background-color: #999; opacity: 0.6; }
         #options-panel { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; background: var(--reader-bar); flex-shrink: 0; padding: 0; color: var(--text); }
-        #options-panel.visible { max-height: calc(var(--options-height) + var(--search-row-height) + 80px); padding: 4px 0; }
+        #options-panel.visible { max-height: calc(var(--options-height) + var(--search-row-height) + 130px); padding: 4px 0; }
         #options-buttons { display: flex; align-items: center; justify-content: stretch; padding: 4px 0; color: inherit; flex-wrap: wrap; }
         .opt-btn { flex: 1; background: transparent; border: none; font-size: 1.6rem; color: inherit; padding: 2px 0; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; line-height: 1; min-width: 0; text-align: center; white-space: nowrap; }
         #search-row { display: flex; align-items: center; justify-content: center; padding: 4px 8px; gap: 6px; background: var(--reader-bar); position: relative; color: inherit; }
@@ -101,10 +101,12 @@
         .processing-card { background: var(--surface); border-radius: var(--radius); padding: 28px 24px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.25); max-width: 340px; width: 85%; word-wrap: break-word; overflow-wrap: break-word; line-height: 1.5; z-index: 11; }
         .processing-card .spinner { width: 40px; height: 40px; border: 3px solid #eee; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; } @keyframes spin { to { transform: rotate(360deg); } }
         .processing-card .msg { font-size: 0.95rem; color: #333; line-height: 1.4; padding: 0 4px; }
-        /* Estilos para el selector de voz */
         #voice-selector-container { padding: 4px 8px; border-top: 1px solid var(--reader-border); background: var(--reader-bar); }
         #voice-selector-container label { font-size: 0.75rem; display: block; margin-bottom: 4px; color: var(--text-secondary); }
         #voice-select { width: 100%; padding: 6px; border-radius: 6px; border: 1px solid var(--reader-border); background: var(--surface); color: var(--text); font-size: 0.8rem; }
+        .voice-buttons { display: flex; gap: 8px; margin-top: 6px; }
+        .voice-buttons button { flex: 1; background: #888; color: white; border: none; border-radius: 6px; padding: 4px; font-size: 0.7rem; cursor: pointer; }
+        .voice-buttons button.diagnostic { background: #555; }
     </style>
 </head>
 <body>
@@ -141,12 +143,16 @@
             <button class="opt-btn" id="btn-fullscreen" title="Pantalla completa">⛶</button>
             <button class="opt-btn" id="btn-back-library" title="Volver a la biblioteca">⌘</button>
         </div>
-        <!-- NUEVO SELECTOR DE VOCES -->
         <div id="voice-selector-container">
             <label>🎤 Seleccionar voz (motor e idioma)</label>
             <select id="voice-select">
                 <option value="">Cargando voces...</option>
             </select>
+            <div class="voice-buttons">
+                <button id="btn-refresh-voices">🔄 Refrescar voces</button>
+                <button id="btn-force-voice">🔊 Forzar cambio</button>
+                <button id="btn-diagnostic" class="diagnostic">🔍 Diagnosticar</button>
+            </div>
         </div>
         <div id="search-row">
             <div class="input-wrapper"><input type="text" id="search-input" placeholder="Buscar..." /><button class="clear-input-btn" id="clear-search-btn" title="Borrar">✕</button></div>
@@ -172,7 +178,7 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS con selector de TODAS las voces ========== -->
+<!-- ========== TTS MEJORADO CON FORZADO REAL DE VOZ ========== -->
 <script>
 (function() {
     'use strict';
@@ -199,7 +205,6 @@
     const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
 
     let velocidadTTS = 2.0;
-    const PAUSA_ENTRE_PARRAFOS = 0;
     const DOBLE_TOQUE_MAX = 300;
     const SCROLL_PORCENTAJE = 0.42;
     const SCROLL_TOLERANCIA = 5;
@@ -208,32 +213,32 @@
     const LONGITUD_MINIMA_TEXTO = 1;
     const BASE_CHARS_PER_SEC = 12.5;
     const CORRECCION_VELOCIDAD = 1.0;
-
     const FALLBACK_DELAY = 400;
     const SCROLL_ANIMATION_MS = 1000;
 
-    // Gestión de voces – voiceURI como identificador único
+    // ---------- GESTIÓN DE VOCES MEJORADA ----------
     let todasLasVoces = [];
     let vozSeleccionadaURI = null;
-    const VOZ_STORAGE_KEY = 'tts_voice_uri_v2';
+    const VOZ_STORAGE_KEY = 'tts_selected_voice_uri_v4';
 
-    function mostrarToast(mensaje) {
+    function mostrarToast(mensaje, duracion = 3000) {
         let toast = document.getElementById('tts-toast');
         if (!toast) {
             toast = document.createElement('div');
             toast.id = 'tts-toast';
             toast.style.cssText = `
                 position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
-                background: rgba(0,0,0,0.8); color: #fff; padding: 10px 20px; border-radius: 20px;
-                font-size: 0.9rem; z-index: 1000000; opacity: 0; transition: opacity 0.3s;
-                pointer-events: none;
+                background: rgba(0,0,0,0.85); color: #fff; padding: 12px 20px;
+                border-radius: 30px; font-size: 0.9rem; z-index: 1000000;
+                opacity: 0; transition: opacity 0.3s; pointer-events: none;
+                white-space: nowrap; max-width: 90%; overflow-x: auto;
             `;
             document.body.appendChild(toast);
         }
         toast.textContent = mensaje;
         toast.style.opacity = '1';
         clearTimeout(toast._timeout);
-        toast._timeout = setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+        toast._timeout = setTimeout(() => { toast.style.opacity = '0'; }, duracion);
     }
 
     function escapeHtml(str) {
@@ -243,116 +248,170 @@
             if (m === '<') return '&lt;';
             if (m === '>') return '&gt;';
             return m;
-        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
-            return c;
         });
     }
 
-    function guardarVozURI() {
-        try { localStorage.setItem(VOZ_STORAGE_KEY, vozSeleccionadaURI || ''); } catch(e) {}
-    }
-
-    function cargarVozURI() {
-        try {
-            const uri = localStorage.getItem(VOZ_STORAGE_KEY);
-            if (uri) vozSeleccionadaURI = uri;
-        } catch(e) {}
-    }
-
-    // Extrae el motor de una voz basado en el nombre o voiceURI
     function extraerMotor(voice) {
         const uri = voice.voiceURI || '';
         const name = voice.name || '';
-        const comb = (uri + ' ' + name).toLowerCase();
-        if (comb.includes('google')) return 'Google';
-        if (comb.includes('microsoft')) return 'Microsoft';
-        if (comb.includes('apple') || comb.includes('com.apple')) return 'Apple';
-        if (comb.includes('amazon') || comb.includes('polly')) return 'Amazon';
-        if (comb.includes('espeak')) return 'eSpeak';
-        if (comb.includes('local') || comb.includes('native') || comb.includes('system')) return 'Sistema';
-        // Intenta tomar la primera palabra de la URI
-        const parts = uri.split(' ');
-        return parts.length > 1 ? parts[0] : (voice.lang?.split('-')[0] || 'Desconocido');
+        const lang = voice.lang || '';
+        const lower = (uri + ' ' + name + ' ' + lang).toLowerCase();
+        if (lower.includes('multitts')) return 'MultiTTS';
+        if (lower.includes('google')) return 'Google';
+        if (lower.includes('microsoft')) return 'Microsoft';
+        if (lower.includes('amazon') || lower.includes('polly')) return 'Amazon';
+        if (lower.includes('apple')) return 'Apple';
+        if (lower.includes('espeak')) return 'eSpeak';
+        return 'Sistema';
     }
 
     function obtenerVozPorURI(uri) {
-        const todas = speechSynthesis.getVoices();
-        return todas.find(v => v.voiceURI === uri) || null;
+        return todasLasVoces.find(v => v.voiceURI === uri) || null;
     }
 
-    // Llena el combobox con todas las voces disponibles
-    function populateVoiceList() {
-        const select = document.getElementById('voice-select');
-        if (!select) return;
+    function guardarVozSeleccionada() {
+        try { localStorage.setItem(VOZ_STORAGE_KEY, vozSeleccionadaURI || ''); } catch(e) {}
+    }
+    function cargarVozSeleccionada() {
+        try { vozSeleccionadaURI = localStorage.getItem(VOZ_STORAGE_KEY) || null; } catch(e) {}
+    }
+
+    // 🔥 FUERZA EL CAMBIO DE VOZ DE MANERA REAL
+    async function forzarCambioVoz() {
+        return new Promise(async (resolve) => {
+            if (!vozSeleccionadaURI) {
+                mostrarToast('⚠️ No hay voz seleccionada');
+                resolve(false);
+                return;
+            }
+            const vozReal = obtenerVozPorURI(vozSeleccionadaURI);
+            if (!vozReal) {
+                mostrarToast('❌ La voz seleccionada ya no está disponible. Refresca la lista.');
+                resolve(false);
+                return;
+            }
+            
+            // Cancelar TODO lo que esté sonando
+            speechSynthesis.cancel();
+            
+            // Esperar un ciclo para asegurar cancelación
+            await new Promise(r => setTimeout(r, 100));
+            
+            // Crear utterance de prueba con la voz deseada
+            const prueba = new SpeechSynthesisUtterance(`Voz cambiada a ${vozReal.name}`);
+            prueba.voice = vozReal;
+            prueba.rate = velocidadTTS;
+            prueba.lang = vozReal.lang;
+            
+            // Evento para confirmar que se usó la voz correcta
+            prueba.onstart = () => {
+                console.log('✅ Usando voz:', prueba.voice.name);
+                mostrarToast(`✅ Voz: ${vozReal.name} (${extraerMotor(vozReal)})`);
+            };
+            
+            prueba.onerror = (e) => {
+                console.error('Error al reproducir prueba:', e);
+                mostrarToast(`❌ Error con la voz: ${vozReal.name}`, 4000);
+            };
+            
+            // Reproducir la prueba
+            speechSynthesis.speak(prueba);
+            resolve(true);
+        });
+    }
+
+    // Refresca la lista de voces y actualiza el selector
+    function refrescarListaVoces() {
         const voces = speechSynthesis.getVoices();
-        todasLasVoces = voces;
         if (!voces.length) {
-            select.innerHTML = '<option value="">No se detectaron voces</option>';
+            mostrarToast('⏳ No se detectaron voces. Reintentando...', 2000);
+            setTimeout(refrescarListaVoces, 500);
             return;
         }
+        todasLasVoces = voces;
+        const select = document.getElementById('voice-select');
+        if (!select) return;
         let html = '';
+        let tieneMultiTTS = false;
         voces.forEach(voice => {
             const motor = extraerMotor(voice);
+            if (motor === 'MultiTTS') tieneMultiTTS = true;
             const label = `${voice.name} (${motor}, ${voice.lang})`;
             const selected = (voice.voiceURI === vozSeleccionadaURI) ? 'selected' : '';
             html += `<option value="${escapeHtml(voice.voiceURI)}" ${selected}>${escapeHtml(label)}</option>`;
         });
         select.innerHTML = html;
-        // Si no hay ninguna voz seleccionada, elegir la primera disponible
         if (!vozSeleccionadaURI && voces.length) {
             vozSeleccionadaURI = voces[0].voiceURI;
-            guardarVozURI();
+            guardarVozSeleccionada();
+        }
+        if (tieneMultiTTS) {
+            mostrarToast('🎉 MultiTTS detectado correctamente. Selecciona una voz.');
+        } else {
+            mostrarToast(`ℹ️ Se detectaron ${voces.length} voces. Selecciona una y prueba.`);
         }
     }
 
-    // Maneja el cambio de voz seleccionada
-    function onVoiceSelected(e) {
-        const newURI = e.target.value;
-        if (newURI) {
-            vozSeleccionadaURI = newURI;
-            guardarVozURI();
-            mostrarToast('Voz cambiada a: ' + (e.target.options[e.target.selectedIndex]?.text || ''));
-            // Opcional: reproducir una pequeña prueba
-            const prueba = new SpeechSynthesisUtterance("Voz seleccionada");
-            const voz = obtenerVozPorURI(vozSeleccionadaURI);
-            if (voz) prueba.voice = voz;
-            speechSynthesis.cancel();
-            speechSynthesis.speak(prueba);
+    function diagnosticarVoces() {
+        const voces = speechSynthesis.getVoices();
+        console.log('=== DIAGNÓSTICO DE VOCES TTS ===');
+        console.log(`Total voces detectadas: ${voces.length}`);
+        voces.forEach((v, i) => {
+            console.log(`${i+1}. Nombre: ${v.name} | URI: ${v.voiceURI} | Idioma: ${v.lang} | Local: ${v.localService} | Predeterminada: ${v.default}`);
+        });
+        if (voces.length === 0) {
+            alert('No se detectaron voces. Asegúrate de que el motor TTS esté instalado y seleccionado en Ajustes → Accesibilidad → Salida de texto a voz.');
+        } else {
+            let msg = `Se encontraron ${voces.length} voces:\n`;
+            voces.forEach(v => { msg += `- ${v.name} (${v.lang})\n`; });
+            alert(msg);
         }
     }
 
-    // Función de prueba de voz (para el botón 🔊)
-    function testCurrentVoice() {
-        if (!vozSeleccionadaURI) {
-            mostrarToast('No hay voz seleccionada');
-            return;
-        }
-        const prueba = new SpeechSynthesisUtterance("Prueba de voz. Este es el sonido actual.");
-        const voz = obtenerVozPorURI(vozSeleccionadaURI);
-        if (voz) prueba.voice = voz;
-        speechSynthesis.cancel();
-        speechSynthesis.speak(prueba);
-    }
+    // Exponer funciones globalmente
+    window.refrescarVoces = refrescarListaVoces;
+    window.forzarVozActual = forzarCambioVoz;
+    window.diagnosticarVoces = diagnosticarVoces;
+    window.obtenerVozPorURI = obtenerVozPorURI;
 
-    cargarVozURI();
-
-    // Escuchar evento de carga de voces
+    // Inicialización
+    cargarVozSeleccionada();
     if (speechSynthesis.onvoiceschanged !== undefined) {
         speechSynthesis.addEventListener('voiceschanged', () => {
-            populateVoiceList();
+            console.log('Evento voiceschanged disparado');
+            refrescarListaVoces();
         });
     }
-    // Intento inmediato por si ya están cargadas
-    if (speechSynthesis.getVoices().length) {
-        populateVoiceList();
-    } else {
-        // Si no, esperar un poco
-        setTimeout(() => {
-            if (speechSynthesis.getVoices().length) populateVoiceList();
-        }, 100);
-    }
+    setTimeout(() => {
+        if (speechSynthesis.getVoices().length) {
+            refrescarListaVoces();
+        } else {
+            speechSynthesis.addEventListener('voiceschanged', refrescarListaVoces);
+        }
+    }, 100);
 
-    // Resto del TTS (sin cambios importantes, pero adaptamos el botón de voz)
+    // Conectar elementos UI después de cargar el DOM
+    document.addEventListener('DOMContentLoaded', () => {
+        const voiceSelect = document.getElementById('voice-select');
+        if (voiceSelect) {
+            voiceSelect.addEventListener('change', async function(e) {
+                const newURI = e.target.value;
+                if (newURI) {
+                    vozSeleccionadaURI = newURI;
+                    guardarVozSeleccionada();
+                    await forzarCambioVoz();
+                }
+            });
+        }
+        const btnRefresh = document.getElementById('btn-refresh-voices');
+        if (btnRefresh) btnRefresh.addEventListener('click', refrescarListaVoces);
+        const btnForce = document.getElementById('btn-force-voice');
+        if (btnForce) btnForce.addEventListener('click', () => forzarCambioVoz());
+        const btnDiagnostic = document.getElementById('btn-diagnostic');
+        if (btnDiagnostic) btnDiagnostic.addEventListener('click', diagnosticarVoces);
+    });
+
+    // ------------- FUNCIONES DEL TTS (lectura, selección, etc.) -------------
     let leyendo = false;
     let utterance = null;
     let bloques = [];
@@ -362,11 +421,9 @@
     let toqueTimer = null;
     let scrollContainer = null;
     let wakeLock = null;
-
     let currentElem = null;
     let fullText = '';
     let startOffsetGlobal = 0;
-
     let onboundaryActive = false;
     let fallbackTimer = null;
     let lastBoundaryTime = 0;
@@ -374,14 +431,13 @@
     let animFrameId = null;
     let bloqueStartTime = 0;
     let bloqueTotalDuration = 0;
-
     let speakerBtn = null;
     let selectionData = null;
 
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
 
-    // ========== SUPRESIÓN DEL MENÚ CONTEXTUAL ==========
+    // Suprimir menú contextual
     document.addEventListener('contextmenu', function(e) {
         const selection = window.getSelection();
         if (!selection || selection.isCollapsed) return;
@@ -495,7 +551,7 @@
         return lista;
     }
 
-    function leerBloque(indice, callback, innerStartOffset = 0) {
+    async function leerBloque(indice, callback, innerStartOffset = 0) {
         if (!leyendo) return callback(false);
         const bloque = bloques[indice];
         if (!bloque) return callback(false);
@@ -512,14 +568,16 @@
         onboundaryActive = false; lastBoundaryTime = 0;
         clearTimeout(fallbackTimer); fallbackTimer = null;
 
+        // Crear utterance con la voz seleccionada
         const u = new SpeechSynthesisUtterance(textoParaLeer);
-        // Aplicar la voz seleccionada
         const vozReal = obtenerVozPorURI(vozSeleccionadaURI);
         if (vozReal) {
             u.voice = vozReal;
             u.lang = vozReal.lang;
+            console.log('📢 Leyendo con voz:', vozReal.name);
         } else {
             u.lang = 'es-ES';
+            console.warn('⚠️ No se encontró la voz seleccionada, usando idioma por defecto');
         }
         u.rate = velocidadTTS;
         u.pitch = 1.0;
@@ -551,7 +609,12 @@
         startFallback();
 
         u.onend = () => { detenerSincronizacion(); utterance = null; callback(true); };
-        u.onerror = () => { detenerSincronizacion(); utterance = null; callback(false); };
+        u.onerror = (e) => { 
+            console.error('Error en TTS:', e);
+            detenerSincronizacion(); 
+            utterance = null; 
+            callback(false); 
+        };
         utterance = u;
         speechSynthesis.speak(u);
     }
@@ -691,13 +754,10 @@
 
     observarYLimpiar();
     scrollContainer = obtenerScrollContainer();
-
-    // Exponer la función de prueba para el botón de voz
-    window.testCurrentVoice = testCurrentVoice;
 })();
 </script>
 
-<!-- ========== LECTOR PRINCIPAL ========== -->
+<!-- ========== LECTOR PRINCIPAL (IndexedDB, renderizado, etc.) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
@@ -706,7 +766,7 @@
     const $commentTextarea = $('#comment-textarea');
     const $btnSaveComment = $('#btn-save-comment');
     const $btnCancelComment = $('#btn-cancel-comment');
-    const $btnVoice = $('#btn-voice'); // Botón de prueba de voz
+    const $btnVoice = $('#btn-voice');
 
     const DB_NAME = 'epub_reader_v91';
     let db, editingBookmarkId = null;
@@ -715,7 +775,6 @@
     let currentBookCommentId = null;
     const FRONT_MATTER_TITLES = ['Cubierta', 'Cállate', 'Portadilla', 'Cita', 'Sinopsis'];
 
-    // ---------- IndexedDB helpers ----------
     function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
     function dbAddBook(d) { return new Promise((res, rej) => { const tx = db.transaction('books','readwrite'); tx.objectStore('books').put(d); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
     function dbGetBook(id) { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').get(id); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
@@ -736,7 +795,6 @@
     function blobToBase64(blob) { return new Promise((res, rej) => { const reader = new FileReader(); reader.onloadend = () => res(reader.result); reader.onerror = rej; reader.readAsDataURL(blob); }); }
 
     function hideOptionsPanel() { optionsVisible = false; $optionsPanel.classList.remove('visible'); }
-
     function requestFullscreen() { if (!document.fullscreenElement && !document.webkitFullscreenElement) { const el = document.documentElement; const req = el.requestFullscreen || el.webkitRequestFullscreen; if (req) req.call(el).then(() => hideOptionsPanel()).catch(() => {}); } }
     function exitFullscreen() { if (document.fullscreenElement || document.webkitFullscreenElement) { const exit = document.exitFullscreen || document.webkitExitFullscreen; if (exit) exit.call(document).then(() => hideOptionsPanel()).catch(()=>{}); } }
     function toggleFullscreen() { if (!document.fullscreenElement && !document.webkitFullscreenElement) requestFullscreen(); else exitFullscreen(); }
@@ -824,36 +882,7 @@
     const $btnFontSize = document.getElementById('btn-font-size'); const $btnTTSSpeed = document.getElementById('btn-tts-speed');
     if ($btnFontSize) { $btnFontSize.addEventListener('click', () => { currentFontSizeIndex = (currentFontSizeIndex + 1) % FONT_SIZES.length; applyFontSizeToDocument(); try { localStorage.setItem('reader_font_size_index', currentFontSizeIndex); } catch(e) {} }); }
     if ($btnTTSSpeed) { $btnTTSSpeed.addEventListener('click', () => { currentSpeedIndex = (currentSpeedIndex + 1) % SPEED_VALUES.length; updateSpeedButton(); if (window.setVelocidadTTS) window.setVelocidadTTS(SPEED_VALUES[currentSpeedIndex]); try { localStorage.setItem('reader_tts_speed_index', currentSpeedIndex); } catch(e) {} }); }
-    // Reemplazar el evento del botón de voz por la función de prueba
-    if ($btnVoice && window.testCurrentVoice) {
-        $btnVoice.addEventListener('click', window.testCurrentVoice);
-    }
-    // Conectar el selector de voz
-    const voiceSelect = document.getElementById('voice-select');
-    if (voiceSelect && window.onVoiceSelected) {
-        voiceSelect.addEventListener('change', window.onVoiceSelected);
-    } else if (voiceSelect) {
-        // Definir localmente si no está expuesto
-        voiceSelect.addEventListener('change', function(e) {
-            const newURI = e.target.value;
-            if (newURI && window.vozSeleccionadaURI !== undefined) {
-                window.vozSeleccionadaURI = newURI;
-                if (window.guardarVozURI) window.guardarVozURI();
-                // Mostrar toast
-                const toast = document.getElementById('tts-toast') || (() => { const t = document.createElement('div'); t.id = 'tts-toast'; t.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#fff;padding:10px 20px;border-radius:20px;font-size:0.9rem;z-index:1000000;opacity:0;transition:opacity 0.3s;pointer-events:none;'; document.body.appendChild(t); return t; })();
-                toast.textContent = 'Voz cambiada: ' + (e.target.options[e.target.selectedIndex]?.text || '');
-                toast.style.opacity = '1';
-                clearTimeout(toast._timeout);
-                toast._timeout = setTimeout(() => toast.style.opacity = '0', 2000);
-                // Probar
-                const prueba = new SpeechSynthesisUtterance("Voz seleccionada");
-                const voz = window.obtenerVozPorURI ? window.obtenerVozPorURI(newURI) : null;
-                if (voz) prueba.voice = voz;
-                speechSynthesis.cancel();
-                speechSynthesis.speak(prueba);
-            }
-        });
-    }
+    if ($btnVoice && window.forzarVozActual) $btnVoice.addEventListener('click', () => window.forzarVozActual());
 
     function renderChapterMarkers() { if (!currentBookData?.structure?.sections || !currentBookData.structure.totalPages) return; const totalPages = currentBookData.structure.totalPages, sections = currentBookData.structure.sections; $chapterMarkers.innerHTML = ''; sections.forEach(sec => { if (sec.globalStartPage === 0) return; const leftPercent = (sec.globalStartPage / totalPages) * 100; const marker = document.createElement('div'); marker.className = 'chapter-marker-item'; marker.style.left = leftPercent + '%'; $chapterMarkers.appendChild(marker); }); }
     function getCurrentHeadingText(scrollTop) { const container = $readerContainer; if (!container) return null; const headings = container.querySelectorAll('.book-content h1, .book-content h2, .book-content h3, .book-content h4'); let current = null; const containerRect = container.getBoundingClientRect(); headings.forEach(h => { const rect = h.getBoundingClientRect(); const top = rect.top - containerRect.top + container.scrollTop; if (top <= scrollTop + 10) { current = h.textContent.trim(); } }); return current; }
