@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>HTML ePub Reader · Voz Web Speech (Google en Chrome)</title>
+    <title>HTML ePub Reader</title>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <style>
         :root {
@@ -56,9 +56,13 @@
             position: absolute; top: 8px; right: 44px; width: 28px; height: 28px;
             border-radius: 50%; border: none; background: transparent; font-size: 1.2rem;
             cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center;
-            color: #222; opacity: 0.2; transition: opacity 0.2s;
+            color: #222;           /* color base */
+            opacity: 0.2;          /* 20% opacidad sin nota */
+            transition: opacity 0.2s;
         }
-        .comment-btn.has-comment { opacity: 1; }
+        .comment-btn.has-comment {
+            opacity: 1;            /* totalmente nítido con nota */
+        }
         .context-menu {
             display: none; position: absolute; top: 36px; right: 8px; background: var(--surface);
             border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 10; min-width: 140px; padding: 4px 0;
@@ -208,8 +212,8 @@
         }
 
         #options-panel { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; background: var(--reader-bar); flex-shrink: 0; padding: 0; color: var(--text); }
-        #options-panel.visible { max-height: calc(var(--options-height) + var(--search-row-height) + 46px); padding: 4px 0; }
-        #options-buttons { display: flex; align-items: center; justify-content: stretch; padding: 4px 0; color: inherit; flex-wrap: wrap; gap: 2px; }
+        #options-panel.visible { max-height: calc(var(--options-height) + var(--search-row-height)); padding: 4px 0; }
+        #options-buttons { display: flex; align-items: center; justify-content: stretch; padding: 4px 0; color: inherit; }
         .opt-btn { flex: 1; background: transparent; border: none; font-size: 1.6rem; color: inherit; padding: 2px 0; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; line-height: 1; min-width: 0; text-align: center; }
         #search-row { display: flex; align-items: center; justify-content: center; padding: 4px 8px; gap: 6px; background: var(--reader-bar); position: relative; color: inherit; }
         .input-wrapper { position: relative; flex: 1; }
@@ -236,10 +240,10 @@
         .book-content hr { display: none; }
         .book-content .chapter-marker { height: 1px; margin: 0; padding: 0; background: transparent; }
         .chapter-separator { height: 5em; clear: both; }
-        .search-results-overlay, .chapters-overlay, .bookmarks-overlay, .comment-edit-overlay, .tts-control-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 20; display: flex; align-items: flex-start; justify-content: flex-start; padding: 20px; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
-        .search-results-overlay.active, .chapters-overlay.active, .bookmarks-overlay.active, .comment-edit-overlay.active, .tts-control-overlay.active { opacity: 1; pointer-events: all; }
-        .search-results-modal, .chapters-modal, .bookmarks-modal, .comment-edit-modal, .tts-control-modal { background: var(--surface); border-radius: var(--radius); width: 90%; max-width: 400px; max-height: 70%; overflow-y: auto; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); margin-right: auto; margin-top: 40px; }
-        .search-results-modal h3, .chapters-modal h3, .bookmarks-modal h3, .comment-edit-modal h3, .tts-control-modal h3 { margin-bottom: 12px; font-size: 1rem; text-align: center; }
+        .search-results-overlay, .chapters-overlay, .bookmarks-overlay, .comment-edit-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 20; display: flex; align-items: flex-start; justify-content: flex-start; padding: 20px; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+        .search-results-overlay.active, .chapters-overlay.active, .bookmarks-overlay.active, .comment-edit-overlay.active { opacity: 1; pointer-events: all; }
+        .search-results-modal, .chapters-modal, .bookmarks-modal, .comment-edit-modal { background: var(--surface); border-radius: var(--radius); width: 90%; max-width: 400px; max-height: 70%; overflow-y: auto; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); margin-right: auto; margin-top: 40px; }
+        .search-results-modal h3, .chapters-modal h3, .bookmarks-modal h3, .comment-edit-modal h3 { margin-bottom: 8px; font-size: 1rem; text-align: center; }
         .search-result-item, .chapter-item { padding: 10px 8px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 0.85rem; color: var(--text); line-height: 1.4; display: flex; gap: 8px; }
         .search-result-item { flex-direction: column; }
         .chapter-item { flex-direction: row; justify-content: space-between; align-items: flex-start; }
@@ -286,18 +290,6 @@
         .processing-card .spinner { width: 40px; height: 40px; border: 3px solid #eee; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .processing-card .msg { font-size: 0.95rem; color: #333; line-height: 1.4; padding: 0 4px; }
-
-        /* Estilos del panel TTS */
-        .tts-slider-group { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
-        .tts-slider-group label { font-size: 0.85rem; font-weight: 600; width: 70px; }
-        .tts-slider-group input { flex: 1; min-width: 140px; }
-        .tts-slider-group span { width: 45px; font-size: 0.8rem; text-align: right; }
-        .tts-language-select { width: 100%; padding: 6px; margin: 10px 0; border-radius: 6px; border: 1px solid var(--reader-border); }
-        .tts-control-buttons { display: flex; gap: 10px; margin-top: 16px; justify-content: center; }
-        .tts-control-buttons button { padding: 8px 16px; border-radius: 30px; border: none; background: var(--accent-light); cursor: pointer; font-weight: 600; }
-        .tts-control-buttons button.primary { background: var(--accent); color: white; }
-        .tts-status { font-size: 0.75rem; text-align: center; margin-top: 12px; color: var(--text-secondary); }
-        select.tts-voice-select { width: 100%; padding: 6px; border-radius: 6px; border: 1px solid var(--reader-border); margin-bottom: 10px; }
     </style>
 </head>
 <body>
@@ -329,8 +321,8 @@
             <button class="opt-btn" id="btn-bookmarks" title="Marcadores">⚐</button>
             <button class="opt-btn" id="btn-chapters" title="Capítulos">☰</button>
             <button class="opt-btn" id="btn-font-size" title="Tamaño de letra">Aa</button>
+            <button class="opt-btn" id="btn-tts-speed" title="Velocidad de lectura">2x</button>
             <button class="opt-btn" id="btn-fullscreen" title="Pantalla completa">⛶</button>
-            <button class="opt-btn" id="btn-tts" title="Lectura en voz alta">🔊</button>
             <button class="opt-btn" id="btn-back-library" title="Volver a la biblioteca">⌘</button>
         </div>
         <div id="search-row">
@@ -342,31 +334,6 @@
     <div id="search-results-overlay" class="search-results-overlay"><div class="search-results-modal" id="search-results-modal"><h3>Resultados</h3><div id="search-results-list"></div></div></div>
     <div id="chapters-overlay" class="chapters-overlay"><div class="chapters-modal" id="chapters-modal"><h3>Capítulos</h3><div id="chapters-list"></div></div></div>
     <div id="bookmarks-overlay" class="bookmarks-overlay"><div class="bookmarks-modal" id="bookmarks-modal"><h3>Marcadores</h3><button class="add-bookmark-btn" id="btn-add-bookmark">+ Añadir marcador</button><div class="bookmark-form" id="bookmark-form" style="display:none;"><div class="note-wrapper"><textarea id="bookmark-note" class="note-input" placeholder="Nota (opcional)..." rows="1"></textarea><button class="note-clear-btn" id="clear-note-btn" title="Borrar nota">✕</button></div><div class="bookmark-form-buttons"><button id="btn-cancel-bookmark">Cancelar</button><button class="primary" id="btn-save-bookmark">Guardar</button></div></div><div id="bookmarks-list"></div></div></div>
-    <!-- Panel TTS con Web Speech -->
-    <div id="tts-control-overlay" class="tts-control-overlay">
-        <div class="tts-control-modal">
-            <h3>🔊 Lectura en voz alta</h3>
-            <div class="tts-slider-group">
-                <label>🗣️ Voz</label>
-                <select id="tts-voice-select" class="tts-voice-select"></select>
-            </div>
-            <div class="tts-slider-group">
-                <label>⚡ Velocidad</label>
-                <input type="range" id="tts-speed" min="0.5" max="2.0" step="0.05" value="1.0">
-                <span id="tts-speed-val">1.0x</span>
-            </div>
-            <div class="tts-slider-group">
-                <label>🔊 Volumen</label>
-                <input type="range" id="tts-volume" min="0" max="1" step="0.05" value="1.0">
-                <span id="tts-volume-val">100%</span>
-            </div>
-            <div class="tts-control-buttons">
-                <button id="tts-speak-selection" class="primary">🔊 Leer desde selección</button>
-                <button id="tts-stop">⏹️ Detener</button>
-            </div>
-            <div id="tts-status" class="tts-status">▶️ Selecciona una palabra y pulsa "Leer desde selección"</div>
-        </div>
-    </div>
 </div>
 
 <div id="comment-edit-overlay" class="comment-edit-overlay">
@@ -382,170 +349,591 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
+<!-- ========== TTS CON SELECTORES AMPLIADOS ========== -->
+<script>
+(function() {
+    'use strict';
+
+    const CONTENEDOR = '#reader-container';
+    // Selectores ampliados para cubrir la mayoría de estructuras en ePub
+    const SELECTORES_TEXTO = [
+        // Etiquetas básicas
+        'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'li', 'figcaption',
+        // Estructuras semánticas
+        'section', 'article', 'main', 'div', 'span',
+        // Clases comunes de ePub
+        '[class*="calibre"]', '[class*="chapter"]', '[class*="title"]',
+        '[class*="heading"]', '[class*="section"]', '[class*="text"]',
+        '[class*="content"]', '[class*="para"]', '[class*="body"]', '[class*="normal"]',
+        // Diálogos y transcripciones
+        '[class*="dialogue"]', '[class*="speaker"]', '[class*="transcript"]',
+        '[class*="timestamp"]', '[class*="line"]', '[class*="note"]', '[class*="annotation"]',
+        // Específicos para el libro (transcripciones policiales)
+        '[class*="detective"]', '[class*="voice"]', '[class*="unidentified"]',
+        '[class*="transcriptor"]', '[class*="silence"]', '[class*="sound"]',
+        '[class*="inaudible"]', '[class*="whisper"]', '[class*="cough"]',
+        // Formato inline relevante
+        'strong', 'b', 'em', 'i', 'u', 'code', 'pre',
+        // Tablas e índices
+        'nav', 'td', 'th', 'caption',
+        // Fallback para texto suelto (último recurso)
+        'div:not([class])', 'span:not([class])'
+    ].join(', ');
+
+    const SELECTORES_IMAGEN = 'img, figure, picture, svg, [class*="image"], [class*="img"], [class*="illustration"]';
+    const SELECTOR_SEPARADOR_TAG = 'hr';
+    const SEPARADOR_TEXTO = /^\*[ *]*\*$/;
+
+    let velocidadTTS = 2.0;
+    const PAUSA_ENTRE_PARRAFOS = 0;
+    const DOBLE_TOQUE_MAX = 300;
+    const SCROLL_PORCENTAJE = 0.42;
+    const SCROLL_TOLERANCIA = 5;
+    const PAUSA_IMAGEN = 1000;
+    const PAUSA_SEPARADOR = 1200;
+    const LONGITUD_MINIMA_TEXTO = 1;
+    const BASE_CHARS_PER_SEC = 12.5;
+    const CORRECCION_VELOCIDAD = 1.0;
+
+    const FALLBACK_DELAY = 400;
+    const SCROLL_ANIMATION_MS = 1000;
+
+    let leyendo = false;
+    let utterance = null;
+    let bloques = [];
+    let indiceBloque = -1;
+    let timeoutSig = null;
+    let ultimoToque = 0;
+    let toqueTimer = null;
+    let scrollContainer = null;
+    let wakeLock = null;
+
+    let currentElem = null;
+    let fullText = '';
+    let startOffsetGlobal = 0;
+
+    let onboundaryActive = false;
+    let fallbackTimer = null;
+    let lastBoundaryTime = 0;
+    let isAnimating = false;
+    let animFrameId = null;
+    let bloqueStartTime = 0;
+    let bloqueTotalDuration = 0;
+
+    let speakerBtn = null;
+    let selectionData = null;
+
+    window.setVelocidadTTS = function(v) { velocidadTTS = v; };
+    window.getVelocidadTTS = function() { return velocidadTTS; };
+
+    // ========== SUPRESIÓN DEL MENÚ CONTEXTUAL ==========
+    document.addEventListener('contextmenu', function(e) {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) return;
+        const range = selection.getRangeAt(0);
+        const nodo = range.startContainer;
+        const parrafo = nodo.parentElement?.closest(SELECTORES_TEXTO);
+        if (parrafo && document.querySelector(CONTENEDOR)?.contains(parrafo)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+        }
+    }, { capture: true, passive: false });
+
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+        ${CONTENEDOR} * {
+            -webkit-touch-callout: none !important;
+            -webkit-user-select: text !important;
+            user-select: text !important;
+        }
+    `;
+    document.head.appendChild(styleEl);
+
+    // ========== ELIMINACIÓN DE IDs ==========
+    function eliminarIDs(container) {
+        if (!container) return;
+        container.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+    }
+    function observarYLimpiar() {
+        const container = document.querySelector(CONTENEDOR);
+        if (!container) return;
+        const observer = new MutationObserver(() => eliminarIDs(container));
+        observer.observe(container, { childList: true, subtree: true });
+        eliminarIDs(container);
+    }
+
+    // ========== WAKE LOCK ==========
+    async function requestWakeLock() {
+        if ('wakeLock' in navigator) {
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                wakeLock.addEventListener('release', () => { wakeLock = null; });
+            } catch (err) {}
+        }
+    }
+    function releaseWakeLock() {
+        if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+    }
+
+    // ========== SCROLL UTILITIES ==========
+    function obtenerScrollContainer() {
+        const contenedor = document.querySelector(CONTENEDOR);
+        if (!contenedor) return window;
+        const style = getComputedStyle(contenedor);
+        if (style.overflowY === 'auto' || style.overflowY === 'scroll' || contenedor.scrollHeight > contenedor.clientHeight) {
+            return contenedor;
+        }
+        return window;
+    }
+
+    function getScrollTop() {
+        return scrollContainer === window ? window.scrollY : scrollContainer.scrollTop;
+    }
+
+    function setScrollTop(value) {
+        if (scrollContainer === window) {
+            window.scrollTo(0, value);
+        } else {
+            scrollContainer.scrollTop = value;
+        }
+    }
+
+    function animateScrollTo(targetScroll, duration, onComplete) {
+        if (isAnimating) {
+            cancelAnimationFrame(animFrameId);
+            isAnimating = false;
+        }
+        const start = getScrollTop();
+        const change = targetScroll - start;
+        if (Math.abs(change) < 0.5) {
+            if (onComplete) onComplete();
+            return;
+        }
+
+        const startTime = performance.now();
+        isAnimating = true;
+
+        function step(now) {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            setScrollTop(start + change * ease);
+
+            if (progress < 1) {
+                animFrameId = requestAnimationFrame(step);
+            } else {
+                isAnimating = false;
+                animFrameId = null;
+                if (onComplete) onComplete();
+            }
+        }
+        animFrameId = requestAnimationFrame(step);
+    }
+
+    function ajustarScrollAPalabra(globalChar) {
+        if (!currentElem) return;
+        const charPos = getCharPosition(currentElem, globalChar);
+        if (!charPos) return;
+
+        const container = document.querySelector(CONTENEDOR);
+        if (!container) return;
+        const cs = getComputedStyle(container);
+        const pTop = parseFloat(cs.paddingTop) || 0;
+        const contHeight = container.clientHeight;
+        const contRect = container.getBoundingClientRect();
+        const contentHeight = contHeight - pTop;
+        const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+
+        const delta = charPos.top - desiredTop;
+        if (Math.abs(delta) <= SCROLL_TOLERANCIA) return;
+
+        const targetScroll = getScrollTop() + delta;
+        animateScrollTo(targetScroll, SCROLL_ANIMATION_MS);
+    }
+
+    function getCharPosition(elem, charIndex) {
+        const walker = document.createTreeWalker(elem, NodeFilter.SHOW_TEXT, null, false);
+        let current = 0;
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            const length = node.textContent.length;
+            if (current + length > charIndex) {
+                const offset = charIndex - current;
+                const range = document.createRange();
+                range.setStart(node, offset);
+                range.setEnd(node, Math.min(offset + 1, length));
+                const rect = range.getClientRects()[0];
+                if (rect) return { top: rect.top, left: rect.left };
+                return null;
+            }
+            current += length;
+        }
+        return null;
+    }
+
+    // ========== GESTIÓN DE BLOQUES ==========
+    function obtenerBloques() {
+        const contenedor = document.querySelector(CONTENEDOR);
+        if (!contenedor) return [];
+        const elementos = contenedor.querySelectorAll(
+            `${SELECTORES_TEXTO}, ${SELECTORES_IMAGEN}, ${SELECTOR_SEPARADOR_TAG}`
+        );
+        const lista = [];
+        const textosVistos = new Set();
+        for (const el of elementos) {
+            if (el.offsetParent === null && getComputedStyle(el).display === 'none') continue;
+
+            if (el.tagName === 'HR') {
+                lista.push({ tipo: 'separador', elemento: el });
+                continue;
+            }
+            if (el.matches(SELECTORES_IMAGEN)) {
+                lista.push({ tipo: 'imagen', elemento: el });
+                continue;
+            }
+
+            let texto = el.textContent.trim();
+            if (SEPARADOR_TEXTO.test(texto)) {
+                lista.push({ tipo: 'separador', elemento: el });
+                continue;
+            }
+            if (texto.length < LONGITUD_MINIMA_TEXTO) continue;
+            const key = el.tagName + '|' + texto;
+            if (textosVistos.has(key)) continue;
+            textosVistos.add(key);
+
+            lista.push({ tipo: 'texto', elemento: el, texto });
+        }
+        return lista;
+    }
+
+    function leerBloque(indice, callback, innerStartOffset = 0) {
+        if (!leyendo) return callback(false);
+        const bloque = bloques[indice];
+        if (!bloque) return callback(false);
+
+        if (bloque.tipo === 'separador') {
+            detenerSincronizacion();
+            setTimeout(() => callback(true), PAUSA_SEPARADOR);
+            return;
+        }
+        if (bloque.tipo === 'imagen') {
+            detenerSincronizacion();
+            callback(true);
+            return;
+        }
+
+        currentElem = bloque.elemento;
+        fullText = bloque.texto.replace(/\//g, ', ');
+        startOffsetGlobal = innerStartOffset;
+        const textoParaLeer = fullText.substring(startOffsetGlobal);
+
+        const charsPerSec = BASE_CHARS_PER_SEC * velocidadTTS * CORRECCION_VELOCIDAD;
+        bloqueTotalDuration = (textoParaLeer.length / charsPerSec) * 1000;
+        bloqueStartTime = performance.now();
+
+        onboundaryActive = false;
+        lastBoundaryTime = 0;
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+
+        const u = new SpeechSynthesisUtterance(textoParaLeer);
+        u.lang = 'es-ES';
+        u.rate = velocidadTTS;
+        u.pitch = 1.0;
+
+        u.onboundary = function(event) {
+            if (!leyendo || !currentElem) return;
+            onboundaryActive = true;
+            lastBoundaryTime = performance.now();
+            if (event.name === 'word' || event.name === 'sentence') {
+                const globalChar = event.charIndex + startOffsetGlobal;
+                ajustarScrollAPalabra(globalChar);
+            }
+        };
+
+        function startFallback() {
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            fallbackTimer = setTimeout(() => {
+                if (!leyendo || !currentElem) return;
+                const ahora = performance.now();
+                if (!onboundaryActive || (ahora - lastBoundaryTime > 700)) {
+                    const elapsed = ahora - bloqueStartTime;
+                    const progress = Math.min(elapsed / bloqueTotalDuration, 1);
+                    const estimatedGlobalChar = Math.floor(progress * (fullText.length - startOffsetGlobal)) + startOffsetGlobal;
+                    ajustarScrollAPalabra(estimatedGlobalChar);
+                }
+                if (leyendo) {
+                    fallbackTimer = setTimeout(startFallback, FALLBACK_DELAY);
+                }
+            }, FALLBACK_DELAY);
+        }
+        startFallback();
+
+        u.onend = () => {
+            detenerSincronizacion();
+            utterance = null;
+            callback(true);
+        };
+        u.onerror = () => {
+            detenerSincronizacion();
+            utterance = null;
+            callback(false);
+        };
+
+        utterance = u;
+        speechSynthesis.speak(u);
+    }
+
+    function detenerSincronizacion() {
+        clearTimeout(fallbackTimer);
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        isAnimating = false;
+        animFrameId = null;
+        currentElem = null;
+    }
+
+    function procesarSiguienteBloque() {
+        if (timeoutSig) clearTimeout(timeoutSig);
+        if (!leyendo) return;
+
+        indiceBloque++;
+        if (indiceBloque >= bloques.length) {
+            detener();
+            return;
+        }
+
+        const bloque = bloques[indiceBloque];
+
+        if (bloque.tipo === 'texto') {
+            leerBloque(indiceBloque, (exito) => {
+                if (exito) procesarSiguienteBloque();
+            });
+        } else if (bloque.tipo === 'imagen') {
+            const container = document.querySelector(CONTENEDOR);
+            if (container && bloque.elemento) {
+                const elemRect = bloque.elemento.getBoundingClientRect();
+                const contRect = container.getBoundingClientRect();
+                const cs = getComputedStyle(container);
+                const pTop = parseFloat(cs.paddingTop) || 0;
+                const desiredTop = contRect.top + pTop + (container.clientHeight - pTop) * SCROLL_PORCENTAJE;
+                const targetScroll = getScrollTop() + (elemRect.top - desiredTop);
+                animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, () => {
+                    timeoutSig = setTimeout(() => procesarSiguienteBloque(), PAUSA_IMAGEN);
+                });
+            } else {
+                timeoutSig = setTimeout(() => procesarSiguienteBloque(), PAUSA_IMAGEN);
+            }
+        } else if (bloque.tipo === 'separador') {
+            timeoutSig = setTimeout(() => procesarSiguienteBloque(), PAUSA_SEPARADOR);
+        }
+    }
+
+    // ========== INICIAR / DETENER ==========
+    function iniciar(parrafo) {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        detener();
+        const todos = obtenerBloques();
+        if (todos.length === 0) return;
+
+        let idx = todos.findIndex(b => b.elemento === parrafo);
+        if (idx === -1) {
+            const txt = parrafo.textContent.trim();
+            idx = todos.findIndex(b => b.tipo === 'texto' && b.elemento.textContent.trim() === txt);
+        }
+        if (idx === -1) return;
+
+        bloques = todos;
+        indiceBloque = idx - 1;
+        leyendo = true;
+        requestWakeLock();
+        scrollContainer = obtenerScrollContainer();
+        procesarSiguienteBloque();
+    }
+
+    function iniciarDesdeSeleccion(parrafo, charIndex) {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        detener();
+        const todos = obtenerBloques();
+        if (todos.length === 0) return;
+
+        let idx = todos.findIndex(b => b.elemento === parrafo);
+        if (idx === -1) {
+            const txt = parrafo.textContent.trim();
+            idx = todos.findIndex(b => b.tipo === 'texto' && b.elemento.textContent.trim() === txt);
+        }
+        if (idx === -1) return;
+
+        bloques = todos;
+        indiceBloque = idx;
+        leyendo = true;
+        requestWakeLock();
+        scrollContainer = obtenerScrollContainer();
+
+        const pos = getCharPosition(parrafo, charIndex);
+        if (pos) {
+            const container = document.querySelector(CONTENEDOR);
+            const cs = getComputedStyle(container);
+            const pTop = parseFloat(cs.paddingTop) || 0;
+            const contHeight = container.clientHeight;
+            const contRect = container.getBoundingClientRect();
+            const contentHeight = contHeight - pTop;
+            const desiredTop = contRect.top + pTop + contentHeight * SCROLL_PORCENTAJE;
+            const delta = pos.top - desiredTop;
+            const targetScroll = getScrollTop() + delta;
+            animateScrollTo(targetScroll, SCROLL_ANIMATION_MS, () => {
+                leerBloque(idx, (exito) => {
+                    if (exito) procesarSiguienteBloque();
+                }, charIndex);
+            });
+        } else {
+            leerBloque(idx, (exito) => {
+                if (exito) procesarSiguienteBloque();
+            }, charIndex);
+        }
+    }
+
+    function detener() {
+        ocultarBotonAltavoz();
+        limpiarSeleccion();
+        if (timeoutSig) clearTimeout(timeoutSig);
+        detenerSincronizacion();
+        if (speechSynthesis) speechSynthesis.cancel();
+        leyendo = false;
+        utterance = null;
+        bloques = [];
+        indiceBloque = -1;
+        releaseWakeLock();
+    }
+
+    function limpiarSeleccion() {
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed) {
+            sel.removeAllRanges();
+        }
+    }
+
+    // ========== BOTÓN FLOTANTE ==========
+    function crearBotonAltavoz() {
+        if (speakerBtn) return;
+        speakerBtn = document.createElement('div');
+        speakerBtn.id = 'tts-speaker-btn';
+        speakerBtn.style.cssText = `
+            position: fixed; bottom: 24px; right: 24px;
+            width: 56px; height: 56px; border-radius: 50%;
+            background: #333; color: #fff; font-size: 28px;
+            display: none; align-items: center; justify-content: center;
+            z-index: 9999999; cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: transform 0.2s, background 0.2s;
+            user-select: none;
+        `;
+        speakerBtn.innerHTML = '🔊';
+        speakerBtn.addEventListener('click', () => {
+            if (selectionData) {
+                iniciarDesdeSeleccion(selectionData.parrafo, selectionData.charIndex);
+                selectionData = null;
+            }
+        });
+        speakerBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+        speakerBtn.addEventListener('touchstart', (e) => e.stopPropagation());
+        document.body.appendChild(speakerBtn);
+    }
+
+    function mostrarBotonAltavoz() {
+        if (!speakerBtn) crearBotonAltavoz();
+        speakerBtn.style.display = 'flex';
+    }
+    function ocultarBotonAltavoz() {
+        if (speakerBtn) speakerBtn.style.display = 'none';
+        selectionData = null;
+    }
+
+    // ========== DETECCIÓN DE SELECCIÓN ==========
+    function manejarSeleccion() {
+        if (leyendo) { ocultarBotonAltavoz(); return; }
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) { ocultarBotonAltavoz(); return; }
+        const range = selection.getRangeAt(0);
+        const startNode = range.startContainer;
+        const parrafo = startNode.parentElement?.closest(SELECTORES_TEXTO);
+        if (!parrafo || !document.querySelector(CONTENEDOR)?.contains(parrafo)) { ocultarBotonAltavoz(); return; }
+        const startOffset = range.startOffset;
+        const nodo = startNode.nodeType === Node.TEXT_NODE ? startNode : null;
+        if (!nodo) { ocultarBotonAltavoz(); return; }
+        const walker = document.createTreeWalker(parrafo, NodeFilter.SHOW_TEXT, null, false);
+        let charIndex = 0;
+        let found = false;
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            if (node === nodo) { charIndex += startOffset; found = true; break; }
+            charIndex += node.textContent.length;
+        }
+        if (!found) { ocultarBotonAltavoz(); return; }
+        selectionData = { parrafo, charIndex };
+        mostrarBotonAltavoz();
+    }
+
+    document.addEventListener('mouseup', () => setTimeout(manejarSeleccion, 20));
+    document.addEventListener('touchend', () => setTimeout(manejarSeleccion, 20));
+    document.addEventListener('mousedown', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
+    document.addEventListener('touchstart', (e) => { if (speakerBtn && !speakerBtn.contains(e.target)) { ocultarBotonAltavoz(); limpiarSeleccion(); } });
+
+    // ========== GESTOS TÁCTILES Y RATÓN ==========
+    const contenedor = document.querySelector(CONTENEDOR);
+    if (contenedor) {
+        contenedor.addEventListener('dblclick', function(e) {
+            ocultarBotonAltavoz();
+            limpiarSeleccion();
+            const parrafo = e.target.closest(SELECTORES_TEXTO);
+            if (parrafo) {
+                e.preventDefault();
+                e.stopPropagation();
+                iniciar(parrafo);
+            }
+        }, { capture: true });
+
+        contenedor.addEventListener('touchend', function(e) {
+            const touch = e.changedTouches[0];
+            const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (!elem || !elem.closest(CONTENEDOR)) return;
+
+            const ahora = Date.now();
+            const diff = ahora - ultimoToque;
+
+            if (diff <= DOBLE_TOQUE_MAX && diff > 0) {
+                if (toqueTimer) clearTimeout(toqueTimer);
+                ocultarBotonAltavoz(); limpiarSeleccion();
+                const parrafo = elem.closest(SELECTORES_TEXTO);
+                if (parrafo) {
+                    e.preventDefault(); e.stopPropagation(); iniciar(parrafo);
+                }
+                ultimoToque = 0;
+            } else {
+                ultimoToque = ahora;
+                if (toqueTimer) clearTimeout(toqueTimer);
+                toqueTimer = setTimeout(() => { if (leyendo) detener(); toqueTimer = null; }, DOBLE_TOQUE_MAX);
+            }
+        }, { capture: true, passive: false });
+    }
+
+    observarYLimpiar();
+    scrollContainer = obtenerScrollContainer();
+})();
+</script>
+
+<!-- ========== LECTOR PRINCIPAL (sin cambios) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
     const $libraryScreen = $('#library-screen'), $readerScreen = $('#reader-screen'), $bookList = $('#book-list'), $fileInput = $('#file-input'), $uploadFab = $('#upload-btn-fab'), $readerContainer = $('#reader-container'), $optionsPanel = $('#options-panel'), $headerChapterTitle = $('#header-chapter-title'), $indPagesLeftChapter = $('#ind-pages-left-chapter'), $infoCenter = $('#info-center'), $infoPercent = $('#info-percent'), $infoPagesLeft = $('#info-pages-left'), $processingOverlay = $('#processing-overlay'), $procMsg = $('#proc-msg'), $progressBarFill = $('#progress-bar-fill'), $progressBarContainer = $('#progress-bar-container'), $chapterMarkers = $('#chapter-markers'), $btnBackLibrary = $('#btn-back-library'), $btnChapters = $('#btn-chapters'), $btnBookmarks = $('#btn-bookmarks'), $btnFullscreen = $('#btn-fullscreen'), $searchRow = $('#search-row'), $searchInput = $('#search-input'), $clearSearchBtn = $('#clear-search-btn'), $btnSearchResults = $('#btn-search-results'), $searchResultsOverlay = $('#search-results-overlay'), $searchResultsList = $('#search-results-list'), $chaptersOverlay = $('#chapters-overlay'), $chaptersList = $('#chapters-list'), $bookmarksOverlay = $('#bookmarks-overlay'), $bookmarksList = $('#bookmarks-list'), $btnAddBookmark = $('#btn-add-bookmark'), $bookmarkForm = $('#bookmark-form'), $bookmarkNote = $('#bookmark-note'), $clearNoteBtn = $('#clear-note-btn'), $btnSaveBookmark = $('#btn-save-bookmark'), $btnCancelBookmark = $('#btn-cancel-bookmark'), $readerHeader = $('#reader-header'), $backLinkBtn = $('#back-link-btn');
-    const $ttsOverlay = $('#tts-control-overlay');
-    const $ttsSpeed = $('#tts-speed');
-    const $ttsVolume = $('#tts-volume');
-    const $ttsSpeedVal = $('#tts-speed-val');
-    const $ttsVolumeVal = $('#tts-volume-val');
-    const $ttsSpeakBtn = $('#tts-speak-selection');
-    const $ttsStopBtn = $('#tts-stop');
-    const $ttsStatus = $('#tts-status');
-    const $btnTTS = $('#btn-tts');
-    const $ttsVoiceSelect = $('#tts-voice-select');
+    const $commentEditOverlay = $('#comment-edit-overlay');
+    const $commentTextarea = $('#comment-textarea');
+    const $btnSaveComment = $('#btn-save-comment');
+    const $btnCancelComment = $('#btn-cancel-comment');
 
-    // --- Web Speech API (voces del sistema, incluye Google en Chrome) ---
-    let currentUtterance = null;
-    let isSpeaking = false;
-    let voices = [];
-
-    function loadVoices() {
-        return new Promise((resolve) => {
-            voices = window.speechSynthesis.getVoices();
-            if (voices.length > 0) {
-                resolve(voices);
-            } else {
-                window.speechSynthesis.addEventListener('voiceschanged', () => {
-                    voices = window.speechSynthesis.getVoices();
-                    resolve(voices);
-                }, { once: true });
-            }
-        });
-    }
-
-    function populateVoiceList() {
-        $ttsVoiceSelect.innerHTML = '';
-        // Filtrar solo voces en español (o según el idioma seleccionado, pero mejor todas)
-        // Mostramos todas las voces disponibles (incluyendo Google)
-        voices.forEach((voice, index) => {
-            const option = document.createElement('option');
-            option.value = index;
-            option.textContent = `${voice.name} (${voice.lang})`;
-            $ttsVoiceSelect.appendChild(option);
-        });
-        // Cargar preferencia guardada
-        try {
-            const savedVoiceIndex = localStorage.getItem('tts_voice_index');
-            if (savedVoiceIndex !== null && parseInt(savedVoiceIndex) < $ttsVoiceSelect.options.length) {
-                $ttsVoiceSelect.selectedIndex = parseInt(savedVoiceIndex);
-            }
-        } catch(e) {}
-    }
-
-    function updateTTSSliders() {
-        $ttsSpeedVal.textContent = $ttsSpeed.value + 'x';
-        $ttsVolumeVal.textContent = Math.round($ttsVolume.value * 100) + '%';
-        localStorage.setItem('tts_speed', $ttsSpeed.value);
-        localStorage.setItem('tts_volume', $ttsVolume.value);
-    }
-
-    function stopTTS() {
-        if (window.speechSynthesis) {
-            window.speechSynthesis.cancel();
-        }
-        if (currentUtterance) {
-            currentUtterance = null;
-        }
-        isSpeaking = false;
-        $ttsStatus.innerHTML = '⏹️ Detenido. Selecciona texto para leer.';
-        setTimeout(() => { if (!isSpeaking) $ttsStatus.innerHTML = '▶️ Selecciona una palabra y pulsa "Leer desde selección"'; }, 1500);
-    }
-
-    async function startTTSFromSelection() {
-        console.log('[TTS] startTTSFromSelection()');
-        if (!currentBookId) {
-            $ttsStatus.innerHTML = '❌ Abre un libro primero.';
-            return;
-        }
-        const selection = window.getSelection();
-        if (!selection || selection.isCollapsed || selection.toString().trim().length === 0) {
-            $ttsStatus.innerHTML = '⚠️ Selecciona una palabra o texto antes de leer.';
-            return;
-        }
-        let anchorNode = selection.anchorNode;
-        if (!anchorNode) return;
-        let containerParagraph = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode;
-        while (containerParagraph && !['P', 'DIV', 'BLOCKQUOTE', 'LI', 'H1', 'H2', 'H3', 'H4'].includes(containerParagraph.tagName)) {
-            containerParagraph = containerParagraph.parentElement;
-        }
-        if (!containerParagraph || !containerParagraph.textContent) {
-            $ttsStatus.innerHTML = '⚠️ No se pudo identificar el párrafo.';
-            return;
-        }
-        const fullParaText = containerParagraph.textContent;
-        const selectedText = selection.toString();
-        const selectionStartIdx = fullParaText.indexOf(selectedText);
-        if (selectionStartIdx === -1) {
-            $ttsStatus.innerHTML = '⚠️ Error al localizar la selección.';
-            return;
-        }
-        const textToRead = fullParaText.substring(selectionStartIdx).trim();
-        if (textToRead.length === 0) return;
-        console.log(`[TTS] Texto a leer: "${textToRead.substring(0, 80)}..."`);
-
-        // Detener cualquier síntesis anterior
-        stopTTS();
-        await new Promise(r => setTimeout(r, 100));
-        
-        // Configurar utterance
-        const utterance = new SpeechSynthesisUtterance(textToRead);
-        const selectedVoiceIndex = $ttsVoiceSelect.selectedIndex;
-        if (voices.length > 0 && selectedVoiceIndex >= 0) {
-            utterance.voice = voices[selectedVoiceIndex];
-        }
-        utterance.rate = parseFloat($ttsSpeed.value);
-        utterance.volume = parseFloat($ttsVolume.value);
-        utterance.lang = utterance.voice ? utterance.voice.lang : 'es-ES';
-        
-        utterance.onstart = () => {
-            isSpeaking = true;
-            $ttsStatus.innerHTML = `🔊 Leyendo: "${textToRead.substring(0, 50)}..."`;
-        };
-        utterance.onend = () => {
-            isSpeaking = false;
-            $ttsStatus.innerHTML = '✅ Lectura finalizada.';
-            setTimeout(() => { if (!isSpeaking) $ttsStatus.innerHTML = '▶️ Selecciona una palabra y pulsa "Leer desde selección"'; }, 2000);
-            currentUtterance = null;
-        };
-        utterance.onerror = (err) => {
-            console.error('[TTS] Error:', err);
-            isSpeaking = false;
-            $ttsStatus.innerHTML = '❌ Error al reproducir voz.';
-            currentUtterance = null;
-        };
-        currentUtterance = utterance;
-        window.speechSynthesis.speak(utterance);
-    }
-
-    $ttsSpeakBtn.addEventListener('click', startTTSFromSelection);
-    $ttsStopBtn.addEventListener('click', stopTTS);
-    $btnTTS.addEventListener('click', () => { $ttsOverlay.classList.add('active'); hideOptionsPanel(); });
-    $ttsOverlay.addEventListener('click', (e) => { if (e.target === $ttsOverlay) $ttsOverlay.classList.remove('active'); });
-    $ttsSpeed.addEventListener('input', updateTTSSliders);
-    $ttsVolume.addEventListener('input', updateTTSSliders);
-    
-    // Cargar preferencias
-    try {
-        const savedSpeed = localStorage.getItem('tts_speed');
-        if (savedSpeed) $ttsSpeed.value = parseFloat(savedSpeed);
-        const savedVol = localStorage.getItem('tts_volume');
-        if (savedVol) $ttsVolume.value = parseFloat(savedVol);
-        updateTTSSliders();
-    } catch(e) {}
-
-    // Cargar voces asíncronamente
-    loadVoices().then(() => {
-        populateVoiceList();
-        // Guardar selección de voz
-        $ttsVoiceSelect.addEventListener('change', () => {
-            localStorage.setItem('tts_voice_index', $ttsVoiceSelect.selectedIndex);
-        });
-    });
-
-    // -------------------- Código original completo del lector (IndexedDB, render, etc.) --------------------
     const DB_NAME = 'epub_reader_v91';
     let db, editingBookmarkId = null;
     let isRenderingLibrary = false, isClosingReader = false;
@@ -554,6 +942,7 @@
 
     const FRONT_MATTER_TITLES = ['Cubierta', 'Cállate', 'Portadilla', 'Cita', 'Sinopsis'];
 
+    // ---------- IndexedDB helpers ----------
     function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
     function dbAddBook(d) { return new Promise((res, rej) => { const tx = db.transaction('books','readwrite'); tx.objectStore('books').put(d); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
     function dbGetBook(id) { return new Promise((res, rej) => { const tx = db.transaction('books','readonly'); const r = tx.objectStore('books').get(id); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
@@ -617,11 +1006,6 @@
         $commentEditOverlay.classList.remove('active');
         currentBookCommentId = null;
     }
-
-    const $commentEditOverlay = $('#comment-edit-overlay');
-    const $commentTextarea = $('#comment-textarea');
-    const $btnSaveComment = $('#btn-save-comment');
-    const $btnCancelComment = $('#btn-cancel-comment');
 
     $btnCancelComment.addEventListener('click', hideCommentEditor);
     $commentEditOverlay.addEventListener('click', e => { if (e.target === $commentEditOverlay) hideCommentEditor(); });
@@ -876,25 +1260,46 @@
     let optionsVisible = false, globalCharMapping = null, headerClickHandler = null;
 
     const FONT_SIZES = [0.9, 1.05, 1.2, 1.4, 1.6];
+    const SPEED_VALUES = [0.75, 1.0, 1.5, 2.0];
     let currentFontSizeIndex = 1;
+    let currentSpeedIndex = 3;
 
     try {
         const savedFont = localStorage.getItem('reader_font_size_index');
         if (savedFont !== null) currentFontSizeIndex = parseInt(savedFont);
+        const savedSpeed = localStorage.getItem('reader_tts_speed_index');
+        if (savedSpeed !== null) currentSpeedIndex = parseInt(savedSpeed);
     } catch(e) {}
 
     function applyFontSizeToDocument() {
         document.documentElement.style.fontSize = (FONT_SIZES[currentFontSizeIndex] * 100) + '%';
     }
 
+    function updateSpeedButton() {
+        const $btnTTSSpeed = document.getElementById('btn-tts-speed');
+        if ($btnTTSSpeed) $btnTTSSpeed.textContent = SPEED_VALUES[currentSpeedIndex] + 'x';
+    }
+
+    if (window.setVelocidadTTS) {
+        window.setVelocidadTTS(SPEED_VALUES[currentSpeedIndex]);
+    }
     applyFontSizeToDocument();
 
     const $btnFontSize = document.getElementById('btn-font-size');
+    const $btnTTSSpeed = document.getElementById('btn-tts-speed');
     if ($btnFontSize) {
         $btnFontSize.addEventListener('click', () => {
             currentFontSizeIndex = (currentFontSizeIndex + 1) % FONT_SIZES.length;
             applyFontSizeToDocument();
             try { localStorage.setItem('reader_font_size_index', currentFontSizeIndex); } catch(e) {}
+        });
+    }
+    if ($btnTTSSpeed) {
+        $btnTTSSpeed.addEventListener('click', () => {
+            currentSpeedIndex = (currentSpeedIndex + 1) % SPEED_VALUES.length;
+            updateSpeedButton();
+            if (window.setVelocidadTTS) window.setVelocidadTTS(SPEED_VALUES[currentSpeedIndex]);
+            try { localStorage.setItem('reader_tts_speed_index', currentSpeedIndex); } catch(e) {}
         });
     }
 
@@ -934,6 +1339,7 @@
             fullHTML += '</div>'; $readerContainer.innerHTML = fullHTML;
 
             applyFontSizeToDocument();
+            updateSpeedButton();
 
             const bookContent = $readerContainer.querySelector('.book-content');
             if (bookContent) {
@@ -1047,8 +1453,7 @@
 
     async function restoreScrollPosition(progress) { await new Promise(r => setTimeout(r, 400)); measureSectionPositions(); const container = $readerContainer; const sh = container.scrollHeight; const ch = container.clientHeight; if (typeof progress.scrollTop === 'number' && progress.scrollTop > 0 && progress.scrollTop < sh) container.scrollTop = progress.scrollTop; else container.scrollTop = Math.max(0, (progress.globalPage/(progress.totalPages||1))*(sh-ch)); setTimeout(() => { if (container.scrollTop < 5 && progress.scrollTop > 100) container.scrollTop = progress.scrollTop; isRestoring = false; measureSectionPositions(); updatePositionFromScroll(); }, 400); }
 
-    function closeReader() { if (isClosingReader) return; isClosingReader = true; stopTTS(); // Detener TTS al salir
-        cleanupScrollDetection(); $readerContainer.innerHTML = ''; sectionDOMRefs = []; currentBookId = null; currentBookData = null; globalCharMapping = null; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; $readerScreen.classList.add('hidden'); $libraryScreen.classList.remove('hidden'); if (history.state && history.state.screen === 'reader') history.back(); exitFullscreen(); renderLibrary(); setTimeout(() => { isClosingReader = false; }, 300); }
+    function closeReader() { if (isClosingReader) return; isClosingReader = true; cleanupScrollDetection(); $readerContainer.innerHTML = ''; sectionDOMRefs = []; currentBookId = null; currentBookData = null; globalCharMapping = null; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; $readerScreen.classList.add('hidden'); $libraryScreen.classList.remove('hidden'); if (history.state && history.state.screen === 'reader') history.back(); exitFullscreen(); renderLibrary(); setTimeout(() => { isClosingReader = false; }, 300); }
 
     window.addEventListener('popstate', e => { if (e.state && e.state.screen === 'reader') closeReader(); });
 
@@ -1065,13 +1470,16 @@
     function buildFlatIndex() {
         const container = $readerContainer;
         if (!container || !currentBookData) return [];
+
         const allMarkers = container.querySelectorAll('.chapter-marker');
         const headings = container.querySelectorAll('.book-content h1, .book-content h2, .book-content h3, .book-content h4');
         const items = [];
+
         headings.forEach(h => {
             const rect = h.getBoundingClientRect();
             const top = rect.top - container.getBoundingClientRect().top + container.scrollTop;
             const level = parseInt(h.tagName.substring(1));
+
             let rawTitle = h.textContent.trim();
             let displayTitle = rawTitle;
             for (const fmTitle of FRONT_MATTER_TITLES) {
@@ -1081,6 +1489,7 @@
                 }
             }
             displayTitle = separateNumberFromTitle(displayTitle);
+
             let sectionIndex = -1;
             let markerBefore = null;
             for (const marker of allMarkers) {
@@ -1095,6 +1504,7 @@
             } else {
                 sectionIndex = 0;
             }
+
             let globalPage = 1;
             if (sectionIndex >= 0 && currentBookData.structure.sections[sectionIndex]) {
                 const sec = currentBookData.structure.sections[sectionIndex];
@@ -1106,10 +1516,13 @@
                 const pageInChapter = Math.min(Math.floor(progress * sec.pageCount) + 1, sec.pageCount || 1);
                 globalPage = sec.globalStartPage + pageInChapter;
             }
+
             const totalPages = currentBookData?.structure?.totalPages || 1;
             const percent = Math.round((globalPage / totalPages) * 100);
+
             items.push({ title: displayTitle, level, top, globalPage, percent, sectionIndex });
         });
+
         return items;
     }
 
@@ -1119,7 +1532,9 @@
         const threshold = st + ch * 0.4;
         const currentSection = findCurrentSection(st);
         const currentChapterIdx = currentSection ? currentSection.index : -1;
+
         let currentIdx = -1;
+
         if (currentChapterIdx >= 0) {
             const sectionItems = items.filter(item => item.sectionIndex === currentChapterIdx);
             if (sectionItems.length > 0) {
@@ -1135,11 +1550,13 @@
                 currentIdx = items.indexOf(bestItem);
             }
         }
+
         if (currentIdx === -1) {
             for (let i = 0; i < items.length; i++) {
                 if (items[i].top <= threshold) currentIdx = i;
             }
         }
+
         containerEl.innerHTML = '';
         let currentElement = null;
         items.forEach((item, idx) => {
@@ -1162,6 +1579,7 @@
             });
             containerEl.appendChild(div);
         });
+
         if (currentElement) {
             setTimeout(() => {
                 currentElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
