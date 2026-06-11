@@ -56,9 +56,13 @@
             position: absolute; top: 8px; right: 44px; width: 28px; height: 28px;
             border-radius: 50%; border: none; background: transparent; font-size: 1.2rem;
             cursor: pointer; z-index: 3; display: flex; align-items: center; justify-content: center;
-            color: #222; opacity: 0.2; transition: opacity 0.2s;
+            color: #222;           /* color base */
+            opacity: 0.2;          /* 20% opacidad sin nota */
+            transition: opacity 0.2s;
         }
-        .comment-btn.has-comment { opacity: 1; }
+        .comment-btn.has-comment {
+            opacity: 1;            /* totalmente nítido con nota */
+        }
         .context-menu {
             display: none; position: absolute; top: 36px; right: 8px; background: var(--surface);
             border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 10; min-width: 140px; padding: 4px 0;
@@ -107,33 +111,104 @@
             padding: 0 10px;
             min-height: auto;
         }
-        .header-col { display: flex; align-items: center; min-width: 0; }
-        .header-col.left-time { flex: 0 0 auto; white-space: nowrap; order: 1; z-index: 2; background: inherit; padding-right: 6px; }
-        .header-col.right-stats { flex: 0 0 auto; white-space: nowrap; order: 3; z-index: 2; background: inherit; padding-left: 6px; display: flex; align-items: center; justify-content: flex-end; }
-        .header-col.center-title {
-            position: absolute; left: 50%; transform: translateX(-50%); top: 0; bottom: 0;
-            display: flex; align-items: center; justify-content: center; white-space: nowrap;
-            overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 100px); z-index: 1;
+        .header-col {
+            display: flex;
+            align-items: center;
+            min-width: 0;
         }
-        .stat-group { display: flex; align-items: center; gap: 2px; }
-        .stat-side { text-align: center; font-weight: 400; min-width: 2ch; }
-        .stat-center { text-align: center; font-weight: 400; min-width: 4ch; }
+        .header-col.left-time {
+            flex: 0 0 auto;
+            white-space: nowrap;
+            order: 1;
+            z-index: 2;
+            background: inherit;
+            padding-right: 6px;
+        }
+        .header-col.right-stats {
+            flex: 0 0 auto;
+            white-space: nowrap;
+            order: 3;
+            z-index: 2;
+            background: inherit;
+            padding-left: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+        .header-col.center-title {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            top: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: calc(100% - 100px);
+            z-index: 1;
+        }
+        .stat-group {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .stat-side {
+            text-align: center;
+            font-weight: 400;
+            min-width: 2ch;
+        }
+        .stat-center {
+            text-align: center;
+            font-weight: 400;
+            min-width: 4ch;
+        }
         .time-stat { font-weight: 400; color: inherit; }
         .bold-stat { font-weight: 700; color: inherit; }
         #header-chapter-title { font-weight: normal; color: inherit; }
-        .chapter-title-header { overflow: hidden; text-overflow: ellipsis; max-width: 100%; display: block; }
+        .chapter-title-header {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+            display: block;
+        }
 
         #progress-bar-container {
-            height: var(--progress-height); background: #ddd; position: relative; cursor: pointer;
-            flex-shrink: 0; margin: 4px 0 0 0; width: 100%;
+            height: var(--progress-height);
+            background: #ddd;
+            position: relative;
+            cursor: pointer;
+            flex-shrink: 0;
+            margin: 4px 0 0 0;
+            width: 100%;
         }
         #progress-bar-fill {
-            height: 100%; background: #777; width: 0%; transition: width 0.3s ease;
-            border-radius: 2px; position: absolute; top: 0; left: 0;
+            height: 100%;
+            background: #777;
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 2px;
+            position: absolute;
+            top: 0;
+            left: 0;
         }
-        #chapter-markers { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
+        #chapter-markers {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+        }
         .chapter-marker-item {
-            position: absolute; top: 0; width: 1px; height: 100%; background-color: #999; opacity: 0.6;
+            position: absolute;
+            top: 0;
+            width: 1px;
+            height: 100%;
+            background-color: #999;
+            opacity: 0.6;
         }
 
         #options-panel { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; background: var(--reader-bar); flex-shrink: 0; padding: 0; color: var(--text); }
@@ -152,7 +227,12 @@
         #reader-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; padding: 16px 18px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font-family: 'Georgia', 'Palatino Linotype', serif; color: #1f1f1f; width: 100%; margin: 0 auto; word-wrap: break-word; overflow-x: hidden; background: var(--reader-bg); scrollbar-width: none; -ms-overflow-style: none; }
         #reader-container::-webkit-scrollbar { display: none; }
         .book-content { font-size: 1.05rem; line-height: 1.7 !important; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%; overflow-x: hidden; font-weight: normal; }
-        .book-content, .book-content * { hyphens: none !important; -webkit-hyphens: none !important; word-break: normal; overflow-wrap: break-word; }
+        .book-content, .book-content * {
+            hyphens: none !important;
+            -webkit-hyphens: none !important;
+            word-break: normal;
+            overflow-wrap: break-word;
+        }
         .book-content h1, .book-content h2, .book-content h3, .book-content h4 { font-weight: 700 !important; text-align: center; margin: 2.5em 0 1.5em 0; }
         .book-content p { margin-bottom: 0.7em !important; font-size: 1.15rem !important; line-height: inherit !important; text-indent: 35px !important; text-align: justify !important; }
         .book-content img { max-width: 100% !important; height: auto !important; border-radius: 6px; margin: 1.5em auto; display: block; background-color: var(--reader-bg); mix-blend-mode: multiply; }
@@ -269,25 +349,34 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== TTS con soporte para Read Aloud (extensión de Firefox) ========== -->
+<!-- ========== TTS CON SELECTORES AMPLIADOS ========== -->
 <script>
 (function() {
     'use strict';
 
     const CONTENEDOR = '#reader-container';
+    // Selectores ampliados para cubrir la mayoría de estructuras en ePub
     const SELECTORES_TEXTO = [
+        // Etiquetas básicas
         'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'li', 'figcaption',
+        // Estructuras semánticas
         'section', 'article', 'main', 'div', 'span',
+        // Clases comunes de ePub
         '[class*="calibre"]', '[class*="chapter"]', '[class*="title"]',
         '[class*="heading"]', '[class*="section"]', '[class*="text"]',
         '[class*="content"]', '[class*="para"]', '[class*="body"]', '[class*="normal"]',
+        // Diálogos y transcripciones
         '[class*="dialogue"]', '[class*="speaker"]', '[class*="transcript"]',
         '[class*="timestamp"]', '[class*="line"]', '[class*="note"]', '[class*="annotation"]',
+        // Específicos para el libro (transcripciones policiales)
         '[class*="detective"]', '[class*="voice"]', '[class*="unidentified"]',
         '[class*="transcriptor"]', '[class*="silence"]', '[class*="sound"]',
         '[class*="inaudible"]', '[class*="whisper"]', '[class*="cough"]',
+        // Formato inline relevante
         'strong', 'b', 'em', 'i', 'u', 'code', 'pre',
+        // Tablas e índices
         'nav', 'td', 'th', 'caption',
+        // Fallback para texto suelto (último recurso)
         'div:not([class])', 'span:not([class])'
     ].join(', ');
 
@@ -336,71 +425,6 @@
 
     window.setVelocidadTTS = function(v) { velocidadTTS = v; };
     window.getVelocidadTTS = function() { return velocidadTTS; };
-
-    // === DETECCIÓN DE LA EXTENSIÓN READ ALOUD ===
-    function isReadAloudAvailable() {
-        return !!(window.readAloud && typeof window.readAloud.play === 'function');
-    }
-
-    function leerConReadAloud(texto) {
-        if (isReadAloudAvailable()) {
-            try {
-                window.readAloud.play(texto);
-                console.log('📖 Read Aloud iniciado');
-                return true;
-            } catch (e) {
-                console.warn('No se pudo usar Read Aloud:', e);
-            }
-        }
-        return false;
-    }
-
-    function iniciarReadAloudDesdeParrafo(parrafo) {
-        const container = document.querySelector(CONTENEDOR);
-        if (!container) return false;
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        const range = document.createRange();
-        range.setStartBefore(parrafo);
-        range.setEndAfter(container.lastChild);
-        selection.addRange(range);
-        return leerConReadAloud(selection.toString());
-    }
-
-    function iniciarReadAloudDesdeSeleccion(parrafo, charIndex) {
-        const textNode = getFirstTextNodeAfter(parrafo, charIndex);
-        if (textNode) {
-            const selection = window.getSelection();
-            selection.removeAllRanges();
-            const range = document.createRange();
-            range.setStart(textNode, Math.min(charIndex, textNode.length));
-            range.setEndAfter(document.querySelector(CONTENEDOR).lastChild);
-            selection.addRange(range);
-            return leerConReadAloud(selection.toString());
-        }
-        const container = document.querySelector(CONTENEDOR);
-        if (container) {
-            const selection = window.getSelection();
-            selection.removeAllRanges();
-            const range = document.createRange();
-            range.selectNodeContents(container);
-            selection.addRange(range);
-            return leerConReadAloud(selection.toString());
-        }
-        return false;
-    }
-
-    function getFirstTextNodeAfter(elem, charIndex) {
-        const walker = document.createTreeWalker(elem, NodeFilter.SHOW_TEXT, null, false);
-        let current = 0;
-        while (walker.nextNode()) {
-            const node = walker.currentNode;
-            const len = node.textContent.length;
-            if (current + len > charIndex) return node;
-            current += len;
-        }
-        return null;
-    }
 
     // ========== SUPRESIÓN DEL MENÚ CONTEXTUAL ==========
     document.addEventListener('contextmenu', function(e) {
@@ -705,20 +729,11 @@
         }
     }
 
-    // ========== INICIAR / DETENER (con Read Aloud) ==========
+    // ========== INICIAR / DETENER ==========
     function iniciar(parrafo) {
         ocultarBotonAltavoz();
         limpiarSeleccion();
         detener();
-
-        if (isReadAloudAvailable()) {
-            if (iniciarReadAloudDesdeParrafo(parrafo)) {
-                leyendo = true;
-                requestWakeLock();
-                return;
-            }
-        }
-
         const todos = obtenerBloques();
         if (todos.length === 0) return;
 
@@ -741,15 +756,6 @@
         ocultarBotonAltavoz();
         limpiarSeleccion();
         detener();
-
-        if (isReadAloudAvailable()) {
-            if (iniciarReadAloudDesdeSeleccion(parrafo, charIndex)) {
-                leyendo = true;
-                requestWakeLock();
-                return;
-            }
-        }
-
         const todos = obtenerBloques();
         if (todos.length === 0) return;
 
@@ -795,9 +801,6 @@
         if (timeoutSig) clearTimeout(timeoutSig);
         detenerSincronizacion();
         if (speechSynthesis) speechSynthesis.cancel();
-        if (isReadAloudAvailable() && typeof window.readAloud.stop === 'function') {
-            try { window.readAloud.stop(); } catch(e) {}
-        }
         leyendo = false;
         utterance = null;
         bloques = [];
@@ -921,7 +924,7 @@
 })();
 </script>
 
-<!-- ========== LECTOR PRINCIPAL (completo) ========== -->
+<!-- ========== LECTOR PRINCIPAL (sin cambios) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
@@ -1615,7 +1618,7 @@
     document.addEventListener('drop', async e => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file && file.name.endsWith('.epub')) { const book = await uploadAndProcessBook(file); if (book) renderLibrary(); } });
     window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage > 0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } });
 
-    (async () => { try { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader listo (con soporte Read Aloud)'); } catch (e) { console.error('Error de inicio:', e); alert('No se pudo iniciar la biblioteca.'); } })();
+    (async () => { try { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader listo'); } catch (e) { console.error('Error de inicio:', e); alert('No se pudo iniciar la biblioteca.'); } })();
 })();
 </script>
 </body>
