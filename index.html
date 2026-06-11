@@ -344,7 +344,6 @@
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
 
-<!-- ========== LECTOR PRINCIPAL (TTS eliminado) ========== -->
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
@@ -361,6 +360,17 @@
     let currentBookCommentId = null;
 
     const FRONT_MATTER_TITLES = ['Cubierta', 'Cállate', 'Portadilla', 'Cita', 'Sinopsis'];
+
+    // Reloj en la cabecera
+    function updateClock() {
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const timeString = `${hours}:${minutes}`;
+        if ($headerChapterTitle) {
+            $headerChapterTitle.textContent = timeString;
+        }
+    }
 
     // ---------- IndexedDB helpers ----------
     function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
@@ -717,6 +727,11 @@
         $readerContainer.innerHTML = ''; sectionDOMRefs = []; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; lastScroll = -1; currentBookId = bookId; optionsVisible = false; $optionsPanel.classList.remove('visible'); $searchInput.value = ''; $clearSearchBtn.classList.remove('visible');
         $backLinkBtn.classList.remove('show'); lastLinkScroll = null;
 
+        // Inicia el reloj en la cabecera
+        updateClock();
+        if (window._clockInterval) clearInterval(window._clockInterval);
+        window._clockInterval = setInterval(updateClock, 1000);
+
         dbGetBook(bookId).then(bookData => {
             if (!bookData?.structure?.sections) { alert('El libro no tiene estructura válida.'); return; }
             bookData.lastOpened = Date.now();
@@ -834,8 +849,8 @@
         const totalMinutes = Math.ceil(wordsRemaining/285); let timeText = '--';
         if (totalMinutes > 0) { if (totalMinutes >= 60) { const hours = Math.floor(totalMinutes/60); const mins = totalMinutes%60; timeText = `${hours} h ${mins} m`; } else { timeText = `${totalMinutes} m`; } }
         $indPagesLeftChapter.textContent = pagesLeftChapter; $infoPercent.textContent = percent+'%'; $infoPagesLeft.textContent = pagesLeftBook;
-        const st = $readerContainer.scrollTop; const headingText = getCurrentHeadingText(st);
-        $headerChapterTitle.textContent = headingText || sec.title || '--';
+        // Ya no se actualiza el título del capítulo en el centro (ahora muestra la hora)
+        // $headerChapterTitle.textContent = headingText || sec.title || '--';  <-- Eliminado
         $infoCenter.textContent = timeText;
         scheduleProgressSave(gPage, chIdx, chPage);
         if (gPage !== prevGlobalPage) { flashProgress(); }
@@ -851,7 +866,9 @@
 
     async function restoreScrollPosition(progress) { await new Promise(r => setTimeout(r, 400)); measureSectionPositions(); const container = $readerContainer; const sh = container.scrollHeight; const ch = container.clientHeight; if (typeof progress.scrollTop === 'number' && progress.scrollTop > 0 && progress.scrollTop < sh) container.scrollTop = progress.scrollTop; else container.scrollTop = Math.max(0, (progress.globalPage/(progress.totalPages||1))*(sh-ch)); setTimeout(() => { if (container.scrollTop < 5 && progress.scrollTop > 100) container.scrollTop = progress.scrollTop; isRestoring = false; measureSectionPositions(); updatePositionFromScroll(); }, 400); }
 
-    function closeReader() { if (isClosingReader) return; isClosingReader = true; cleanupScrollDetection(); $readerContainer.innerHTML = ''; sectionDOMRefs = []; currentBookId = null; currentBookData = null; globalCharMapping = null; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; $readerScreen.classList.add('hidden'); $libraryScreen.classList.remove('hidden'); if (history.state && history.state.screen === 'reader') history.back(); exitFullscreen(); renderLibrary(); setTimeout(() => { isClosingReader = false; }, 300); }
+    function closeReader() { 
+        if (window._clockInterval) { clearInterval(window._clockInterval); window._clockInterval = null; }
+        if (isClosingReader) return; isClosingReader = true; cleanupScrollDetection(); $readerContainer.innerHTML = ''; sectionDOMRefs = []; currentBookId = null; currentBookData = null; globalCharMapping = null; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; $readerScreen.classList.add('hidden'); $libraryScreen.classList.remove('hidden'); if (history.state && history.state.screen === 'reader') history.back(); exitFullscreen(); renderLibrary(); setTimeout(() => { isClosingReader = false; }, 300); }
 
     window.addEventListener('popstate', e => { if (e.state && e.state.screen === 'reader') closeReader(); });
 
