@@ -403,10 +403,11 @@
     const $ttsStatus = $('#tts-status');
     const $btnTTS = $('#btn-tts');
 
-    // --- Google Translate TTS engine ---
+    // --- Google Translate TTS con fetch y blob (evita bloqueos) ---
     let currentAudio = null;
     let isSpeaking = false;
     let stopRequested = false;
+    let currentAudioUrl = null;
 
     function updateTTSSliders() {
         $ttsSpeedVal.textContent = $ttsSpeed.value + 'x';
@@ -430,39 +431,59 @@
         updateTTSSliders();
     } catch(e) {}
 
+    // Construir URL de Google Translate TTS con parámetros modernos
     function getGoogleTTSUrl(text, lang) {
         if (!text || text.length === 0) return null;
         let clean = text.replace(/\s+/g, ' ').trim();
         if (clean.length === 0) return null;
+        // Dividir en segmentos cortos para evitar cortes de audio (máximo 100 caracteres por petición)
         const maxLen = 100;
         if (clean.length > maxLen) clean = clean.substring(0, maxLen);
-        return `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(clean)}&tl=${lang}&client=tw-ob`;
+        // Usar client=gtx que suele funcionar mejor con fetch
+        return `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(clean)}&tl=${lang}&client=gtx`;
     }
 
-    async function playChunk(url, volume, speed) {
-        return new Promise((resolve, reject) => {
-            if (stopRequested) return reject(new Error('Stopped'));
-            const audio = new Audio();
-            currentAudio = audio;
-            audio.src = url;
-            audio.volume = volume;
-            audio.playbackRate = speed;
-            audio.onended = () => {
-                if (currentAudio === audio) currentAudio = null;
-                resolve();
-            };
-            audio.onerror = (err) => {
-                if (currentAudio === audio) currentAudio = null;
-                reject(err);
-            };
+    // Obtener audio mediante fetch con cabeceras realistas de navegador
+    async function fetchAudioBlob(url) {
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://translate.google.com/',
+                'Origin': 'https://translate.google.com'
+            }
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const arrayBuffer = await response.arrayBuffer();
+        return new Blob([arrayBuffer], { type: 'audio/mpeg' });
+    }
+
+    async function playChunk(text, lang, volume, speed) {
+        if (stopRequested) throw new Error('Stopped');
+        const url = getGoogleTTSUrl(text, lang);
+        if (!url) throw new Error('Invalid text');
+        const blob = await fetchAudioBlob(url);
+        const blobUrl = URL.createObjectURL(blob);
+        currentAudioUrl = blobUrl;
+        const audio = new Audio();
+        currentAudio = audio;
+        audio.src = blobUrl;
+        audio.volume = volume;
+        audio.playbackRate = speed;
+        await new Promise((resolve, reject) => {
+            audio.onended = () => resolve();
+            audio.onerror = (e) => reject(new Error('Audio playback error'));
             audio.play().catch(reject);
         });
+        URL.revokeObjectURL(blobUrl);
+        if (currentAudio === audio) currentAudio = null;
+        currentAudioUrl = null;
     }
 
     async function speakGoogleChunks(fullText, lang, speed, volume) {
         if (!fullText || fullText.length === 0) return;
-        let sentences = fullText.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [fullText];
-        let chunks = [];
+        // Dividir en oraciones o segmentos cortos
+        const sentences = fullText.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [fullText];
+        const chunks = [];
         for (let sent of sentences) {
             sent = sent.trim();
             if (sent.length === 0) continue;
@@ -484,13 +505,17 @@
         }
         for (let i = 0; i < chunks.length; i++) {
             if (stopRequested) break;
-            const url = getGoogleTTSUrl(chunks[i], lang);
-            if (!url) continue;
             try {
-                await playChunk(url, volume, speed);
-            } catch (e) {
-                console.warn('Error chunk TTS:', e);
-                await new Promise(r => setTimeout(r, 200));
+                await playChunk(chunks[i], lang, volume, speed);
+            } catch (err) {
+                console.warn('Error en chunk TTS:', err);
+                // Esperar y reintentar una vez?
+                await new Promise(r => setTimeout(r, 300));
+                if (!stopRequested && err.message !== 'Stopped') {
+                    try {
+                        await playChunk(chunks[i], lang, volume, speed);
+                    } catch(e) { console.error('Falló chunk definitivamente', e); }
+                }
             }
         }
     }
@@ -501,6 +526,10 @@
             currentAudio.pause();
             currentAudio.src = '';
             currentAudio = null;
+        }
+        if (currentAudioUrl) {
+            URL.revokeObjectURL(currentAudioUrl);
+            currentAudioUrl = null;
         }
         isSpeaking = false;
         $ttsStatus.innerHTML = '⏹️ Detenido. Selecciona texto para leer.';
@@ -536,14 +565,21 @@
         }
         const textToRead = fullParaText.substring(selectionStartIdx).trim();
         if (textToRead.length === 0) return;
+        
+        // Detener cualquier reproducción en curso
         stopRequested = true;
         if (currentAudio) {
             currentAudio.pause();
             currentAudio = null;
         }
+        if (currentAudioUrl) {
+            URL.revokeObjectURL(currentAudioUrl);
+            currentAudioUrl = null;
+        }
         await new Promise(r => setTimeout(r, 100));
         stopRequested = false;
         isSpeaking = true;
+        
         const lang = $ttsLang.value;
         const speed = parseFloat($ttsSpeed.value);
         const volume = parseFloat($ttsVolume.value);
@@ -560,6 +596,7 @@
         } finally {
             isSpeaking = false;
             currentAudio = null;
+            currentAudioUrl = null;
             if (!stopRequested) {
                 setTimeout(() => { if (!isSpeaking && $ttsStatus.innerHTML.includes('Leyendo')) $ttsStatus.innerHTML = '▶️ Listo'; }, 500);
             }
