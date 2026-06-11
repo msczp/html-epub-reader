@@ -403,7 +403,7 @@
     const $ttsStatus = $('#tts-status');
     const $btnTTS = $('#btn-tts');
 
-    // --- Google Translate TTS con fetch y blob (evita bloqueos) ---
+    // --- Google Translate TTS con proxy CORS (para evitar bloqueos desde file://) ---
     let currentAudio = null;
     let isSpeaking = false;
     let stopRequested = false;
@@ -431,36 +431,53 @@
         updateTTSSliders();
     } catch(e) {}
 
-    // Construir URL de Google Translate TTS con parámetros modernos
+    // Construir URL de Google Translate TTS
     function getGoogleTTSUrl(text, lang) {
         if (!text || text.length === 0) return null;
         let clean = text.replace(/\s+/g, ' ').trim();
         if (clean.length === 0) return null;
-        // Dividir en segmentos cortos para evitar cortes de audio (máximo 100 caracteres por petición)
         const maxLen = 100;
         if (clean.length > maxLen) clean = clean.substring(0, maxLen);
-        // Usar client=gtx que suele funcionar mejor con fetch
-        return `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(clean)}&tl=${lang}&client=gtx`;
+        // Usamos client=webapp que suele funcionar bien
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(clean)}&tl=${lang}&client=webapp`;
+        console.log(`[TTS] URL generada: ${url}`);
+        return url;
     }
 
-    // Obtener audio mediante fetch con cabeceras realistas de navegador
+    // Obtener audio mediante fetch con proxy CORS gratuito (allorigins)
     async function fetchAudioBlob(url) {
-        const response = await fetch(url, {
+        // Usamos el proxy de allorigins para evitar CORS
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        console.log(`[TTS] Fetching audio vía proxy: ${proxyUrl}`);
+        const response = await fetch(proxyUrl, {
+            method: 'GET',
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': 'https://translate.google.com/',
-                'Origin': 'https://translate.google.com'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            console.error(`[TTS] HTTP error: ${response.status} ${response.statusText}`);
+            throw new Error(`HTTP ${response.status}`);
+        }
         const arrayBuffer = await response.arrayBuffer();
-        return new Blob([arrayBuffer], { type: 'audio/mpeg' });
+        console.log(`[TTS] Audio recibido, tamaño: ${arrayBuffer.byteLength} bytes`);
+        // Detectar tipo MIME real (podría ser audio/mpeg o audio/mp3)
+        let mime = 'audio/mpeg';
+        if (arrayBuffer.byteLength > 0) {
+            const firstByte = new Uint8Array(arrayBuffer)[0];
+            if (firstByte === 0x49 && new Uint8Array(arrayBuffer)[1] === 0x44 && new Uint8Array(arrayBuffer)[2] === 0x33) mime = 'audio/mpeg';
+            else if (firstByte === 0x52 && new Uint8Array(arrayBuffer)[1] === 0x49 && new Uint8Array(arrayBuffer)[2] === 0x46 && new Uint8Array(arrayBuffer)[3] === 0x46) mime = 'audio/wav';
+        }
+        return new Blob([arrayBuffer], { type: mime });
     }
 
     async function playChunk(text, lang, volume, speed) {
-        if (stopRequested) throw new Error('Stopped');
+        if (stopRequested) {
+            console.log('[TTS] Reproducción detenida antes de chunk');
+            throw new Error('Stopped');
+        }
         const url = getGoogleTTSUrl(text, lang);
-        if (!url) throw new Error('Invalid text');
+        if (!url) throw new Error('Texto vacío');
         const blob = await fetchAudioBlob(url);
         const blobUrl = URL.createObjectURL(blob);
         currentAudioUrl = blobUrl;
@@ -469,10 +486,20 @@
         audio.src = blobUrl;
         audio.volume = volume;
         audio.playbackRate = speed;
+        console.log(`[TTS] Reproduciendo chunk: "${text.substring(0, 50)}..." velocidad=${speed}, volumen=${volume}`);
         await new Promise((resolve, reject) => {
-            audio.onended = () => resolve();
-            audio.onerror = (e) => reject(new Error('Audio playback error'));
-            audio.play().catch(reject);
+            audio.onended = () => {
+                console.log('[TTS] Chunk finalizado correctamente');
+                resolve();
+            };
+            audio.onerror = (e) => {
+                console.error('[TTS] Error de reproducción:', e);
+                reject(new Error('Audio playback error'));
+            };
+            audio.play().catch(err => {
+                console.error('[TTS] Error al llamar a play():', err);
+                reject(err);
+            });
         });
         URL.revokeObjectURL(blobUrl);
         if (currentAudio === audio) currentAudio = null;
@@ -480,10 +507,13 @@
     }
 
     async function speakGoogleChunks(fullText, lang, speed, volume) {
-        if (!fullText || fullText.length === 0) return;
-        // Dividir en oraciones o segmentos cortos
+        if (!fullText || fullText.length === 0) {
+            console.warn('[TTS] Texto vacío, nada que leer');
+            return;
+        }
         const sentences = fullText.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [fullText];
         const chunks = [];
+        console.log(`[TTS] Texto original (${fullText.length} caracteres). Dividiendo en ${sentences.length} oraciones.`);
         for (let sent of sentences) {
             sent = sent.trim();
             if (sent.length === 0) continue;
@@ -503,26 +533,37 @@
                 if (current) chunks.push(current);
             }
         }
+        console.log(`[TTS] Generados ${chunks.length} fragmentos para TTS.`);
         for (let i = 0; i < chunks.length; i++) {
-            if (stopRequested) break;
+            if (stopRequested) {
+                console.log('[TTS] Detención solicitada, interrumpiendo cola');
+                break;
+            }
+            console.log(`[TTS] Procesando fragmento ${i+1}/${chunks.length}: "${chunks[i].substring(0, 60)}..."`);
             try {
                 await playChunk(chunks[i], lang, volume, speed);
             } catch (err) {
-                console.warn('Error en chunk TTS:', err);
-                // Esperar y reintentar una vez?
+                console.error(`[TTS] Error en fragmento ${i+1}:`, err);
+                // Esperar y reintentar una sola vez
                 await new Promise(r => setTimeout(r, 300));
                 if (!stopRequested && err.message !== 'Stopped') {
                     try {
+                        console.log(`[TTS] Reintentando fragmento ${i+1}...`);
                         await playChunk(chunks[i], lang, volume, speed);
-                    } catch(e) { console.error('Falló chunk definitivamente', e); }
+                    } catch(e) {
+                        console.error(`[TTS] Falló definitivamente el fragmento ${i+1}:`, e);
+                    }
                 }
             }
         }
+        console.log('[TTS] Cola de reproducción completada.');
     }
 
     function stopTTS() {
+        console.log('[TTS] stopTTS() llamado');
         stopRequested = true;
         if (currentAudio) {
+            console.log('[TTS] Deteniendo audio actual');
             currentAudio.pause();
             currentAudio.src = '';
             currentAudio = null;
@@ -537,15 +578,20 @@
     }
 
     async function startTTSFromSelection() {
+        console.log('[TTS] startTTSFromSelection() iniciado');
         if (!currentBookId) {
+            console.warn('[TTS] No hay libro abierto');
             $ttsStatus.innerHTML = '❌ Abre un libro primero.';
             return;
         }
         const selection = window.getSelection();
         if (!selection || selection.isCollapsed || selection.toString().trim().length === 0) {
+            console.warn('[TTS] No hay texto seleccionado o selección vacía');
             $ttsStatus.innerHTML = '⚠️ Selecciona una palabra o texto antes de leer.';
             return;
         }
+        const selectedRaw = selection.toString();
+        console.log(`[TTS] Texto seleccionado: "${selectedRaw.substring(0, 100)}..."`);
         let anchorNode = selection.anchorNode;
         if (!anchorNode) return;
         let containerParagraph = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode;
@@ -553,6 +599,7 @@
             containerParagraph = containerParagraph.parentElement;
         }
         if (!containerParagraph || !containerParagraph.textContent) {
+            console.warn('[TTS] No se pudo identificar el párrafo contenedor');
             $ttsStatus.innerHTML = '⚠️ No se pudo identificar el párrafo.';
             return;
         }
@@ -560,11 +607,16 @@
         const selectedText = selection.toString();
         const selectionStartIdx = fullParaText.indexOf(selectedText);
         if (selectionStartIdx === -1) {
+            console.warn('[TTS] No se encontró el texto seleccionado dentro del párrafo');
             $ttsStatus.innerHTML = '⚠️ Error al localizar la selección.';
             return;
         }
         const textToRead = fullParaText.substring(selectionStartIdx).trim();
-        if (textToRead.length === 0) return;
+        if (textToRead.length === 0) {
+            console.warn('[TTS] Texto a leer vacío después de recortar');
+            return;
+        }
+        console.log(`[TTS] Texto a leer (desde selección hasta fin de párrafo): "${textToRead.substring(0, 150)}..." (${textToRead.length} caracteres)`);
         
         // Detener cualquier reproducción en curso
         stopRequested = true;
@@ -583,16 +635,20 @@
         const lang = $ttsLang.value;
         const speed = parseFloat($ttsSpeed.value);
         const volume = parseFloat($ttsVolume.value);
+        console.log(`[TTS] Configuración: lang=${lang}, speed=${speed}, volume=${volume}`);
         $ttsStatus.innerHTML = `🔊 Leyendo: "${textToRead.substring(0, 50)}..." (${lang})`;
         try {
             await speakGoogleChunks(textToRead, lang, speed, volume);
             if (!stopRequested) {
+                console.log('[TTS] Lectura completada exitosamente');
                 $ttsStatus.innerHTML = '✅ Lectura finalizada.';
                 setTimeout(() => { if (!isSpeaking) $ttsStatus.innerHTML = '▶️ Selecciona una palabra y pulsa "Leer desde selección"'; }, 2000);
+            } else {
+                console.log('[TTS] Lectura detenida por usuario');
             }
         } catch (err) {
-            console.error(err);
-            $ttsStatus.innerHTML = '❌ Error en la voz. Revisa conexión.';
+            console.error('[TTS] Error global en startTTSFromSelection:', err);
+            $ttsStatus.innerHTML = '❌ Error en la voz. Revisa consola (F12).';
         } finally {
             isSpeaking = false;
             currentAudio = null;
@@ -608,7 +664,7 @@
     $btnTTS.addEventListener('click', () => { $ttsOverlay.classList.add('active'); hideOptionsPanel(); });
     $ttsOverlay.addEventListener('click', (e) => { if (e.target === $ttsOverlay) $ttsOverlay.classList.remove('active'); });
 
-    // -------------------- Código original completo del lector (IndexedDB, render, etc.) --------------------
+    // -------------------- Código original del lector (IndexedDB, render, etc.) --------------------
     const DB_NAME = 'epub_reader_v91';
     let db, editingBookmarkId = null;
     let isRenderingLibrary = false, isClosingReader = false;
