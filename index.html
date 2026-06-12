@@ -122,10 +122,7 @@
             height: 30px;
         }
         .header-row.top-row { margin-top: 0; }
-        .header-row.bottom-info-row {
-            margin-bottom: 0;
-            justify-content: center;   /* solo el título central */
-        }
+        .header-row.bottom-info-row { margin-bottom: 0; }
         .header-col {
             display: flex;
             align-items: center;
@@ -414,7 +411,7 @@
 
     <div id="reader-container"></div>
 
-    <!-- Separador inferior controlado por el panel de herramientas -->
+    <!-- Separador inferior con id para controlarlo -->
     <div class="reader-spacer hidden" id="bottom-spacer"></div>
 
     <div id="reader-bottombar" class="reader-bar">
@@ -435,11 +432,10 @@
             <div id="progress-bar-fill"></div>
             <div id="chapter-markers"></div>
         </div>
-        <!-- Fila inferior simplificada: solo el título del capítulo centrado -->
         <div class="header-row bottom-info-row">
-            <div class="header-col center-title">
-                <span id="header-chapter-title">--</span>
-            </div>
+            <div class="header-col left-time"><span id="device-time">--:--</span></div>
+            <div class="header-col center-title"><span id="header-chapter-title">--</span></div>
+            <div class="header-col right-stats"><span id="battery-indicator">--%</span></div>
         </div>
     </div>
 
@@ -504,7 +500,9 @@
           $readerTopbar = $('#reader-topbar'),
           $readerBottombar = $('#reader-bottombar'),
           $backLinkBtn = $('#back-link-btn'),
-          $bottomSpacer = $('#bottom-spacer');
+          $deviceTime = $('#device-time'),
+          $batteryIndicator = $('#battery-indicator'),
+          $bottomSpacer = $('#bottom-spacer');   // referencia al separador inferior
     const $commentEditOverlay = $('#comment-edit-overlay');
     const $commentTextarea = $('#comment-textarea');
     const $btnSaveComment = $('#btn-save-comment');
@@ -517,6 +515,42 @@
     let currentBookCommentId = null;
 
     const FRONT_MATTER_TITLES = ['Cubierta', 'Cállate', 'Portadilla', 'Cita', 'Sinopsis'];
+
+    // --- Batería ---
+    let batteryLevel = null;
+    function updateBatteryDisplay() {
+        if (batteryLevel !== null) {
+            $batteryIndicator.textContent = Math.round(batteryLevel * 100) + '%';
+        } else {
+            $batteryIndicator.textContent = '--%';
+        }
+    }
+    async function initBattery() {
+        try {
+            if (navigator.getBattery) {
+                const battery = await navigator.getBattery();
+                batteryLevel = battery.level;
+                updateBatteryDisplay();
+                battery.addEventListener('levelchange', () => {
+                    batteryLevel = battery.level;
+                    updateBatteryDisplay();
+                });
+            } else {
+                $batteryIndicator.textContent = '--%';
+            }
+        } catch (e) {
+            $batteryIndicator.textContent = '--%';
+        }
+    }
+    initBattery();
+
+    // --- Reloj ---
+    function updateClock() {
+        const now = new Date();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        $deviceTime.textContent = `${hours}:${minutes}`;
+    }
 
     // ---------- IndexedDB helpers ----------
     function openDB() { return new Promise((resolve, reject) => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => { const d = e.target.result; if (!d.objectStoreNames.contains('books')) d.createObjectStore('books', { keyPath: 'id' }); if (!d.objectStoreNames.contains('progress')) d.createObjectStore('progress', { keyPath: 'bookId' }); if (!d.objectStoreNames.contains('bookmarks')) { const s = d.createObjectStore('bookmarks', { keyPath: 'id', autoIncrement: true }); s.createIndex('bookId', 'bookId', { unique: false }); } }; req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onerror = () => reject(req.error); }); }
@@ -901,11 +935,15 @@
         lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 };
         isRestoring = false; lastScroll = -1; currentBookId = bookId;
         optionsVisible = true;
-        showOptionsPanel();
+        showOptionsPanel();   // asegura el estado correcto del separador
         $searchInput.value = '';
         $clearSearchBtn.classList.remove('visible');
         $backLinkBtn.classList.remove('show');
         lastLinkScroll = null;
+
+        updateClock();
+        if (window._clockInterval) clearInterval(window._clockInterval);
+        window._clockInterval = setInterval(updateClock, 1000);
 
         dbGetBook(bookId).then(bookData => {
             if (!bookData?.structure?.sections) { alert('El libro no tiene estructura válida.'); return; }
@@ -1205,6 +1243,7 @@
     }
 
     function closeReader() {
+        if (window._clockInterval) { clearInterval(window._clockInterval); window._clockInterval = null; }
         if (isClosingReader) return;
         isClosingReader = true;
         cleanupScrollDetection();
@@ -1524,7 +1563,7 @@
             short_name: 'ePub Reader',
             description: 'Lector de libros ePub sin conexión',
             start_url: location.href.split('?')[0],
-            display: 'browser',   // Modo navegador para mantener el menú de Edge
+            display: 'minimal-ui',   // Permite conservar el menú contextual de Edge
             orientation: 'any',
             theme_color: '#eaeaea',
             background_color: '#f5f5f5',
