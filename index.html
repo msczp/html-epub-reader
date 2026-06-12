@@ -108,6 +108,7 @@
             background: var(--reader-bg);
             flex-shrink: 0;
         }
+        .reader-spacer.hidden { display: none; }
 
         .header-row {
             display: flex;
@@ -410,7 +411,8 @@
 
     <div id="reader-container"></div>
 
-    <div class="reader-spacer"></div>
+    <!-- Separador inferior con id para controlarlo -->
+    <div class="reader-spacer hidden" id="bottom-spacer"></div>
 
     <div id="reader-bottombar" class="reader-bar">
         <div id="options-panel" class="visible">
@@ -499,7 +501,8 @@
           $readerBottombar = $('#reader-bottombar'),
           $backLinkBtn = $('#back-link-btn'),
           $deviceTime = $('#device-time'),
-          $batteryIndicator = $('#battery-indicator');
+          $batteryIndicator = $('#battery-indicator'),
+          $bottomSpacer = $('#bottom-spacer');   // referencia al separador inferior
     const $commentEditOverlay = $('#comment-edit-overlay');
     const $commentTextarea = $('#comment-textarea');
     const $btnSaveComment = $('#btn-save-comment');
@@ -582,8 +585,18 @@
     function blobToBase64(blob) { return new Promise((res, rej) => { const reader = new FileReader(); reader.onloadend = () => res(reader.result); reader.onerror = rej; reader.readAsDataURL(blob); }); }
 
     let optionsVisible = true;
-    function hideOptionsPanel() { optionsVisible = false; $optionsPanel.classList.remove('visible'); }
-    function toggleOptionsPanel() { optionsVisible = !optionsVisible; $optionsPanel.classList.toggle('visible', optionsVisible); }
+    function hideOptionsPanel() { optionsVisible = false; $optionsPanel.classList.remove('visible'); $bottomSpacer.classList.remove('hidden'); }
+    function showOptionsPanel() { optionsVisible = true; $optionsPanel.classList.add('visible'); $bottomSpacer.classList.add('hidden'); }
+    function toggleOptionsPanel() {
+        optionsVisible = !optionsVisible;
+        if (optionsVisible) {
+            $optionsPanel.classList.add('visible');
+            $bottomSpacer.classList.add('hidden');
+        } else {
+            $optionsPanel.classList.remove('visible');
+            $bottomSpacer.classList.remove('hidden');
+        }
+    }
 
     function requestFullscreen() {
         if (!document.fullscreenElement && !document.webkitFullscreenElement) {
@@ -922,7 +935,7 @@
         lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 };
         isRestoring = false; lastScroll = -1; currentBookId = bookId;
         optionsVisible = true;
-        $optionsPanel.classList.add('visible');
+        showOptionsPanel();   // asegura el estado correcto del separador
         $searchInput.value = '';
         $clearSearchBtn.classList.remove('visible');
         $backLinkBtn.classList.remove('show');
@@ -988,7 +1001,6 @@
                 });
             }
 
-            // UNIFICADO: clic en el área de texto
             $readerContainer.addEventListener('click', e => {
                 const link = e.target.closest('a');
                 if (link) {
@@ -1024,7 +1036,6 @@
                         }
                     }
                 } else {
-                    // No es enlace: ocultar botón volver si visible y alternar panel de herramientas
                     if ($backLinkBtn.classList.contains('show')) {
                         $backLinkBtn.classList.remove('show');
                     }
@@ -1032,7 +1043,6 @@
                 }
             });
 
-            // Botón volver
             $backLinkBtn.addEventListener('click', () => {
                 if (lastLinkScroll !== null) {
                     $readerContainer.scrollTo({ top: lastLinkScroll, behavior:'smooth' });
@@ -1553,7 +1563,7 @@
             short_name: 'ePub Reader',
             description: 'Lector de libros ePub sin conexión',
             start_url: location.href.split('?')[0],
-            display: 'standalone',
+            display: 'minimal-ui',   // Permite conservar el menú contextual de Edge
             orientation: 'any',
             theme_color: '#eaeaea',
             background_color: '#f5f5f5',
