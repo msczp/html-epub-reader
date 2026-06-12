@@ -77,36 +77,49 @@
         #upload-btn-fab:disabled { opacity: 0.5; pointer-events: none; }
         #file-input { display: none; }
 
-        #reader-header {
+        /* --- Barras superior e inferior --- */
+        .reader-bar {
             flex-shrink: 0;
             background: var(--reader-bar);
             z-index: 4;
-            cursor: pointer;
             user-select: none;
-            display: flex;
-            flex-direction: column;
-            padding: 6px 0 0 0;
-            gap: 0;
             color: var(--text);
             transition: background 0.15s, color 0.15s;
         }
-        #reader-header.progress-flash { background: #555; color: #fff; }
-        #reader-header.progress-flash .time-stat,
-        #reader-header.progress-flash .bold-stat,
-        #reader-header.progress-flash #header-chapter-title { color: #fff; }
+        #reader-topbar {
+            cursor: default;
+            padding: 0;
+        }
+        #reader-topbar.progress-flash { background: #555; color: #fff; }
+        #reader-topbar.progress-flash .time-stat,
+        #reader-topbar.progress-flash .bold-stat { color: #fff; }
+
+        #reader-bottombar {
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+        }
+
+        /* Espaciadores del mismo color que el fondo del texto */
+        .reader-spacer {
+            height: 30px;
+            background: var(--reader-bg);  /* mismo fondo que el área de lectura */
+            flex-shrink: 0;
+        }
+
         .header-row {
-            position: relative;
             display: flex;
             align-items: center;
             justify-content: space-between;
             font-size: var(--header-font-size);
-            line-height: var(--header-line-height);
+            line-height: 1.2;
             color: inherit;
             font-weight: 400;
-            margin: 0;
-            padding: 0 10px;
-            min-height: auto;
+            padding: 0 30px;
+            height: 30px;
         }
+        .header-row.top-row { margin-top: 0; }
+        .header-row.bottom-info-row { margin-bottom: 0; }
         .header-col {
             display: flex;
             align-items: center;
@@ -115,61 +128,33 @@
         .header-col.left-time {
             flex: 0 0 auto;
             white-space: nowrap;
-            order: 1;
-            z-index: 2;
-            background: inherit;
-            padding-right: 6px;
         }
         .header-col.right-stats {
             flex: 0 0 auto;
             white-space: nowrap;
-            order: 3;
-            z-index: 2;
-            background: inherit;
-            padding-left: 6px;
             display: flex;
             align-items: center;
             justify-content: flex-end;
         }
         .header-col.center-title {
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-            top: 0;
-            bottom: 0;
+            flex: 1;
             display: flex;
             align-items: center;
             justify-content: center;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: calc(100% - 100px);
-            z-index: 1;
+            text-align: center;
         }
         .stat-group {
             display: flex;
             align-items: center;
-            gap: 2px;
+            gap: 4px;
         }
-        .stat-side {
-            text-align: center;
-            font-weight: 400;
-            min-width: 2ch;
-        }
-        .stat-center {
-            text-align: center;
-            font-weight: 400;
-            min-width: 4ch;
-        }
+        .stat-side { font-weight: 400; min-width: 2ch; text-align: center; }
+        .stat-center { font-weight: 400; min-width: 4ch; text-align: center; }
         .time-stat { font-weight: 400; color: inherit; }
         .bold-stat { font-weight: 700; color: inherit; }
-        #header-chapter-title { font-weight: normal; color: inherit; }
-        .chapter-title-header {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 100%;
-            display: block;
-        }
 
         #progress-bar-container {
             height: var(--progress-height);
@@ -177,7 +162,7 @@
             position: relative;
             cursor: pointer;
             flex-shrink: 0;
-            margin: 4px 0 0 0;
+            margin: 0;
             width: 100%;
         }
         #progress-bar-fill {
@@ -207,20 +192,111 @@
             opacity: 0.6;
         }
 
-        #options-panel { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; background: var(--reader-bar); flex-shrink: 0; padding: 0; color: var(--text); }
-        #options-panel.visible { max-height: calc(var(--options-height) + var(--search-row-height)); padding: 4px 0; }
-        #options-buttons { display: flex; align-items: center; justify-content: stretch; padding: 4px 0; color: inherit; }
-        .opt-btn { flex: 1; background: transparent; border: none; font-size: 1.6rem; color: inherit; padding: 2px 0; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; line-height: 1; min-width: 0; text-align: center; }
-        #search-row { display: flex; align-items: center; justify-content: center; padding: 4px 8px; gap: 6px; background: var(--reader-bar); position: relative; color: inherit; }
+        #options-panel {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            background: var(--reader-bar);
+            padding: 0;
+            color: var(--text);
+            cursor: default;
+        }
+        #options-panel.visible {
+            max-height: calc(var(--options-height) + var(--search-row-height));
+            padding: 4px 0;
+            margin-bottom: 4px;
+        }
+        #options-buttons {
+            display: flex;
+            align-items: center;
+            justify-content: stretch;
+            padding: 4px 0;
+            color: inherit;
+        }
+        .opt-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            font-size: 1.6rem;
+            color: inherit;
+            padding: 2px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            line-height: 1;
+            min-width: 0;
+            text-align: center;
+        }
+        #search-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 8px;
+            gap: 6px;
+            background: var(--reader-bar);
+            position: relative;
+            color: inherit;
+        }
         .input-wrapper { position: relative; flex: 1; }
-        #search-input { width: 100%; border: 1px solid var(--reader-border); border-radius: 6px; padding: 4px 28px 4px 8px; font-size: 0.85rem; background: #fff; color: var(--text); }
-        #search-input:focus, .bookmark-form textarea:focus, .note-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
-        .clear-input-btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #999; font-size: 1.2rem; cursor: pointer; padding: 2px 4px; line-height: 1; display: none; }
+        #search-input {
+            width: 100%;
+            border: 1px solid var(--reader-border);
+            border-radius: 6px;
+            padding: 4px 28px 4px 8px;
+            font-size: 0.85rem;
+            background: #fff;
+            color: var(--text);
+        }
+        #search-input:focus, .bookmark-form textarea:focus, .note-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-light);
+        }
+        .clear-input-btn {
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: transparent;
+            border: none;
+            color: #999;
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 2px 4px;
+            line-height: 1;
+            display: none;
+        }
         .clear-input-btn.visible { display: block; }
-        #btn-search-results { font-size: 1.6rem; background: transparent; border: none; color: inherit; cursor: pointer; padding: 2px 4px; display: flex; align-items: center; }
+        #btn-search-results {
+            font-size: 1.6rem;
+            background: transparent;
+            border: none;
+            color: inherit;
+            cursor: pointer;
+            padding: 2px 4px;
+            display: flex;
+            align-items: center;
+        }
 
         .temp-highlight { background-color: #cccccc; border-radius: 2px; transition: background-color 0.4s ease; }
-        #reader-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; padding: 16px 18px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font-family: 'Georgia', 'Palatino Linotype', serif; color: #1f1f1f; width: 100%; margin: 0 auto; word-wrap: break-word; overflow-x: hidden; background: var(--reader-bg); scrollbar-width: none; -ms-overflow-style: none; }
+        #reader-container {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            position: relative;
+            padding: 30px 30px calc(10px + env(safe-area-inset-bottom, 0px)) 30px;
+            font-family: 'Georgia', 'Palatino Linotype', serif;
+            color: #1f1f1f;
+            width: 100%;
+            margin: 0 auto;
+            word-wrap: break-word;
+            overflow-x: hidden;
+            background: var(--reader-bg);
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
         #reader-container::-webkit-scrollbar { display: none; }
         .book-content { font-size: 1.05rem; line-height: 1.7 !important; word-wrap: break-word; overflow-wrap: break-word; max-width: 100%; overflow-x: hidden; font-weight: normal; }
         .book-content, .book-content * {
@@ -236,11 +312,28 @@
         .book-content hr { display: none; }
         .book-content .chapter-marker { height: 1px; margin: 0; padding: 0; background: transparent; }
         .chapter-separator { height: 5em; clear: both; }
-        .search-results-overlay, .chapters-overlay, .bookmarks-overlay, .comment-edit-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 20; display: flex; align-items: flex-start; justify-content: flex-start; padding: 20px; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
-        .search-results-overlay.active, .chapters-overlay.active, .bookmarks-overlay.active, .comment-edit-overlay.active { opacity: 1; pointer-events: all; }
-        .search-results-modal, .chapters-modal, .bookmarks-modal, .comment-edit-modal { background: var(--surface); border-radius: var(--radius); width: 90%; max-width: 400px; max-height: 70%; overflow-y: auto; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); margin-right: auto; margin-top: 40px; }
-        .search-results-modal h3, .chapters-modal h3, .bookmarks-modal h3, .comment-edit-modal h3 { margin-bottom: 8px; font-size: 1rem; text-align: center; }
-        .search-result-item, .chapter-item { padding: 10px 8px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 0.85rem; color: var(--text); line-height: 1.4; display: flex; gap: 8px; }
+
+        /* Overlays */
+        .search-results-overlay, .chapters-overlay, .bookmarks-overlay, .comment-edit-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 20;
+            display: flex; align-items: flex-start; justify-content: flex-start;
+            padding: 20px; opacity: 0; pointer-events: none; transition: opacity 0.25s;
+        }
+        .search-results-overlay.active, .chapters-overlay.active, .bookmarks-overlay.active, .comment-edit-overlay.active {
+            opacity: 1; pointer-events: all;
+        }
+        .search-results-modal, .chapters-modal, .bookmarks-modal, .comment-edit-modal {
+            background: var(--surface); border-radius: var(--radius); width: 90%; max-width: 400px;
+            max-height: 70%; overflow-y: auto; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            margin-right: auto; margin-top: 40px;
+        }
+        .search-results-modal h3, .chapters-modal h3, .bookmarks-modal h3, .comment-edit-modal h3 {
+            margin-bottom: 8px; font-size: 1rem; text-align: center;
+        }
+        .search-result-item, .chapter-item {
+            padding: 10px 8px; border-bottom: 1px solid #eee; cursor: pointer;
+            font-size: 0.85rem; color: var(--text); line-height: 1.4; display: flex;
+        }
         .search-result-item { flex-direction: column; }
         .chapter-item { flex-direction: row; justify-content: space-between; align-items: flex-start; }
         .search-result-item:last-child, .chapter-item:last-child { border-bottom: none; }
@@ -248,10 +341,8 @@
         .search-result-item .meta { font-size: 0.7rem; color: var(--text-secondary); align-self: flex-end; }
         .chapter-item .chapter-title { text-align: left; flex: 1; white-space: normal; overflow: visible; text-overflow: clip; font-size: 0.85rem; }
         .chapter-item .chapter-page { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; flex-shrink: 0; text-align: right; display: flex; gap: 12px; align-items: baseline; margin-left: 8px; }
-
         .chapter-item.current-chapter-bg { background: #e0e0e0; border-radius: 4px; }
         .chapter-item.front-matter-item { color: #aaa; font-weight: normal; }
-
         .chapter-item.level-0 { font-weight: bold; padding-left: 8px; }
         .chapter-item.level-1 { font-style: italic; padding-left: 24px; }
         .chapter-item.level-2 { font-style: italic; padding-left: 40px; }
@@ -298,10 +389,13 @@
 </div>
 
 <div id="reader-screen" class="screen hidden">
-    <div id="reader-header">
-        <div class="header-row">
-            <div class="header-col left-time"><span class="time-stat" id="info-center">--</span></div>
-            <div class="header-col center-title"><span class="chapter-title-header" id="header-chapter-title">--</span></div>
+    <!-- Barra superior -->
+    <div id="reader-topbar" class="reader-bar">
+        <div class="header-row top-row">
+            <div class="header-col left-time">
+                <span class="time-stat" id="info-center">--</span>
+            </div>
+            <div class="header-col center-title"></div>
             <div class="header-col right-stats">
                 <div class="stat-group">
                     <span class="stat-side bold-stat" id="ind-pages-left-chapter">--</span>
@@ -310,22 +404,45 @@
                 </div>
             </div>
         </div>
-        <div id="progress-bar-container"><div id="progress-bar-fill"></div><div id="chapter-markers"></div></div>
     </div>
-    <div id="options-panel">
-        <div id="options-buttons">
-            <button class="opt-btn" id="btn-bookmarks" title="Marcadores">⚐</button>
-            <button class="opt-btn" id="btn-chapters" title="Capítulos">☰</button>
-            <button class="opt-btn" id="btn-font-size" title="Tamaño de letra">Aa</button>
-            <button class="opt-btn" id="btn-fullscreen" title="Pantalla completa">⛶</button>
-            <button class="opt-btn" id="btn-back-library" title="Volver a la biblioteca">⌘</button>
-        </div>
-        <div id="search-row">
-            <div class="input-wrapper"><input type="text" id="search-input" placeholder="Buscar..." /><button class="clear-input-btn" id="clear-search-btn" title="Borrar">✕</button></div>
-            <button id="btn-search-results" title="Buscar">⌕</button>
-        </div>
-    </div>
+
+    <!-- Espaciador del color del fondo -->
+    <div class="reader-spacer"></div>
+
     <div id="reader-container"></div>
+
+    <!-- Espaciador del color del fondo -->
+    <div class="reader-spacer"></div>
+
+    <!-- Barra inferior -->
+    <div id="reader-bottombar" class="reader-bar">
+        <!-- Panel de herramientas (desplegable) -->
+        <div id="options-panel" class="visible">
+            <div id="options-buttons">
+                <button class="opt-btn" id="btn-bookmarks" title="Marcadores">⚐</button>
+                <button class="opt-btn" id="btn-chapters" title="Capítulos">☰</button>
+                <button class="opt-btn" id="btn-font-size" title="Tamaño de letra">Aa</button>
+                <button class="opt-btn" id="btn-fullscreen" title="Pantalla completa">⛶</button>
+                <button class="opt-btn" id="btn-back-library" title="Volver a la biblioteca">⌘</button>
+            </div>
+            <div id="search-row">
+                <div class="input-wrapper"><input type="text" id="search-input" placeholder="Buscar..." /><button class="clear-input-btn" id="clear-search-btn" title="Borrar">✕</button></div>
+                <button id="btn-search-results" title="Buscar">⌕</button>
+            </div>
+        </div>
+        <!-- Barra de progreso -->
+        <div id="progress-bar-container">
+            <div id="progress-bar-fill"></div>
+            <div id="chapter-markers"></div>
+        </div>
+        <!-- Fila de información inferior -->
+        <div class="header-row bottom-info-row">
+            <div class="header-col left-time"><span id="device-time">--:--</span></div>
+            <div class="header-col center-title"><span id="header-chapter-title">--</span></div>
+            <div class="header-col right-stats"><span id="battery-indicator">--%</span></div>
+        </div>
+    </div>
+
     <div id="search-results-overlay" class="search-results-overlay"><div class="search-results-modal" id="search-results-modal"><h3>Resultados</h3><div id="search-results-list"></div></div></div>
     <div id="chapters-overlay" class="chapters-overlay"><div class="chapters-modal" id="chapters-modal"><h3>Capítulos</h3><div id="chapters-list"></div></div></div>
     <div id="bookmarks-overlay" class="bookmarks-overlay"><div class="bookmarks-modal" id="bookmarks-modal"><h3>Marcadores</h3><button class="add-bookmark-btn" id="btn-add-bookmark">+ Añadir marcador</button><div class="bookmark-form" id="bookmark-form" style="display:none;"><div class="note-wrapper"><textarea id="bookmark-note" class="note-input" placeholder="Nota (opcional)..." rows="1"></textarea><button class="note-clear-btn" id="clear-note-btn" title="Borrar nota">✕</button></div><div class="bookmark-form-buttons"><button id="btn-cancel-bookmark">Cancelar</button><button class="primary" id="btn-save-bookmark">Guardar</button></div></div><div id="bookmarks-list"></div></div></div>
@@ -347,7 +464,48 @@
 <script>
 (function() {
     const $ = (sel) => document.querySelector(sel);
-    const $libraryScreen = $('#library-screen'), $readerScreen = $('#reader-screen'), $bookList = $('#book-list'), $fileInput = $('#file-input'), $uploadFab = $('#upload-btn-fab'), $readerContainer = $('#reader-container'), $optionsPanel = $('#options-panel'), $headerChapterTitle = $('#header-chapter-title'), $indPagesLeftChapter = $('#ind-pages-left-chapter'), $infoCenter = $('#info-center'), $infoPercent = $('#info-percent'), $infoPagesLeft = $('#info-pages-left'), $processingOverlay = $('#processing-overlay'), $procMsg = $('#proc-msg'), $progressBarFill = $('#progress-bar-fill'), $progressBarContainer = $('#progress-bar-container'), $chapterMarkers = $('#chapter-markers'), $btnBackLibrary = $('#btn-back-library'), $btnChapters = $('#btn-chapters'), $btnBookmarks = $('#btn-bookmarks'), $btnFullscreen = $('#btn-fullscreen'), $searchRow = $('#search-row'), $searchInput = $('#search-input'), $clearSearchBtn = $('#clear-search-btn'), $btnSearchResults = $('#btn-search-results'), $searchResultsOverlay = $('#search-results-overlay'), $searchResultsList = $('#search-results-list'), $chaptersOverlay = $('#chapters-overlay'), $chaptersList = $('#chapters-list'), $bookmarksOverlay = $('#bookmarks-overlay'), $bookmarksList = $('#bookmarks-list'), $btnAddBookmark = $('#btn-add-bookmark'), $bookmarkForm = $('#bookmark-form'), $bookmarkNote = $('#bookmark-note'), $clearNoteBtn = $('#clear-note-btn'), $btnSaveBookmark = $('#btn-save-bookmark'), $btnCancelBookmark = $('#btn-cancel-bookmark'), $readerHeader = $('#reader-header'), $backLinkBtn = $('#back-link-btn');
+    const $libraryScreen = $('#library-screen'),
+          $readerScreen = $('#reader-screen'),
+          $bookList = $('#book-list'),
+          $fileInput = $('#file-input'),
+          $uploadFab = $('#upload-btn-fab'),
+          $readerContainer = $('#reader-container'),
+          $optionsPanel = $('#options-panel'),
+          $headerChapterTitle = $('#header-chapter-title'),
+          $indPagesLeftChapter = $('#ind-pages-left-chapter'),
+          $infoCenter = $('#info-center'),
+          $infoPercent = $('#info-percent'),
+          $infoPagesLeft = $('#info-pages-left'),
+          $processingOverlay = $('#processing-overlay'),
+          $procMsg = $('#proc-msg'),
+          $progressBarFill = $('#progress-bar-fill'),
+          $progressBarContainer = $('#progress-bar-container'),
+          $chapterMarkers = $('#chapter-markers'),
+          $btnBackLibrary = $('#btn-back-library'),
+          $btnChapters = $('#btn-chapters'),
+          $btnBookmarks = $('#btn-bookmarks'),
+          $btnFullscreen = $('#btn-fullscreen'),
+          $searchRow = $('#search-row'),
+          $searchInput = $('#search-input'),
+          $clearSearchBtn = $('#clear-search-btn'),
+          $btnSearchResults = $('#btn-search-results'),
+          $searchResultsOverlay = $('#search-results-overlay'),
+          $searchResultsList = $('#search-results-list'),
+          $chaptersOverlay = $('#chapters-overlay'),
+          $chaptersList = $('#chapters-list'),
+          $bookmarksOverlay = $('#bookmarks-overlay'),
+          $bookmarksList = $('#bookmarks-list'),
+          $btnAddBookmark = $('#btn-add-bookmark'),
+          $bookmarkForm = $('#bookmark-form'),
+          $bookmarkNote = $('#bookmark-note'),
+          $clearNoteBtn = $('#clear-note-btn'),
+          $btnSaveBookmark = $('#btn-save-bookmark'),
+          $btnCancelBookmark = $('#btn-cancel-bookmark'),
+          $readerTopbar = $('#reader-topbar'),
+          $readerBottombar = $('#reader-bottombar'),
+          $backLinkBtn = $('#back-link-btn'),
+          $deviceTime = $('#device-time'),
+          $batteryIndicator = $('#battery-indicator');
     const $commentEditOverlay = $('#comment-edit-overlay');
     const $commentTextarea = $('#comment-textarea');
     const $btnSaveComment = $('#btn-save-comment');
@@ -361,15 +519,40 @@
 
     const FRONT_MATTER_TITLES = ['Cubierta', 'Cállate', 'Portadilla', 'Cita', 'Sinopsis'];
 
-    // Reloj en la cabecera
+    // --- Batería ---
+    let batteryLevel = null;
+    function updateBatteryDisplay() {
+        if (batteryLevel !== null) {
+            $batteryIndicator.textContent = Math.round(batteryLevel * 100) + '%';
+        } else {
+            $batteryIndicator.textContent = '--%';
+        }
+    }
+    async function initBattery() {
+        try {
+            if (navigator.getBattery) {
+                const battery = await navigator.getBattery();
+                batteryLevel = battery.level;
+                updateBatteryDisplay();
+                battery.addEventListener('levelchange', () => {
+                    batteryLevel = battery.level;
+                    updateBatteryDisplay();
+                });
+            } else {
+                $batteryIndicator.textContent = '--%';
+            }
+        } catch (e) {
+            $batteryIndicator.textContent = '--%';
+        }
+    }
+    initBattery();
+
+    // --- Reloj ---
     function updateClock() {
         const now = new Date();
         const hours = String(now.getHours()).padStart(2, '0');
         const minutes = String(now.getMinutes()).padStart(2, '0');
-        const timeString = `${hours}:${minutes}`;
-        if ($headerChapterTitle) {
-            $headerChapterTitle.textContent = timeString;
-        }
+        $deviceTime.textContent = `${hours}:${minutes}`;
     }
 
     // ---------- IndexedDB helpers ----------
@@ -391,10 +574,7 @@
             const r = store.get(bookId);
             r.onsuccess = () => {
                 const book = r.result;
-                if (book) {
-                    book.comment = comment;
-                    store.put(book);
-                }
+                if (book) { book.comment = comment; store.put(book); }
             };
             tx.oncomplete = () => res();
             tx.onerror = () => rej(tx.error);
@@ -407,7 +587,9 @@
     function splitIntoPages(text, charsPerPage=2000) { const pages = []; if (!text?.length) return ['']; let rem = text; while (rem.length > charsPerPage) { let cut = charsPerPage; const slice = rem.substr(charsPerPage,120); const m = slice.match(/[\s.,;:!?¡¿—\-'"»)]/); if (m?.index !== undefined) cut = charsPerPage + m.index + 1; pages.push(rem.substring(0,cut).trim()); rem = rem.substring(cut).trim(); } if (rem) pages.push(rem.trim()); return pages.length ? pages : ['']; }
     function blobToBase64(blob) { return new Promise((res, rej) => { const reader = new FileReader(); reader.onloadend = () => res(reader.result); reader.onerror = rej; reader.readAsDataURL(blob); }); }
 
+    let optionsVisible = true; // visible por defecto
     function hideOptionsPanel() { optionsVisible = false; $optionsPanel.classList.remove('visible'); }
+    function toggleOptionsPanel() { optionsVisible = !optionsVisible; $optionsPanel.classList.toggle('visible', optionsVisible); }
 
     function requestFullscreen() {
         if (!document.fullscreenElement && !document.webkitFullscreenElement) {
@@ -421,22 +603,38 @@
     document.addEventListener('fullscreenchange', () => hideOptionsPanel());
     document.addEventListener('webkitfullscreenchange', () => hideOptionsPanel());
 
-    $clearSearchBtn.addEventListener('click', () => { $searchInput.value = ''; $clearSearchBtn.classList.remove('visible'); $searchInput.focus(); });
+    $clearSearchBtn.addEventListener('click', (e) => { e.stopPropagation(); $searchInput.value = ''; $clearSearchBtn.classList.remove('visible'); $searchInput.focus(); });
     $searchInput.addEventListener('input', () => { $clearSearchBtn.classList.toggle('visible', $searchInput.value.length > 0); });
-    $clearNoteBtn.addEventListener('click', () => { $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkNote.focus(); });
+    $searchInput.addEventListener('click', (e) => e.stopPropagation());
+    $clearNoteBtn.addEventListener('click', (e) => { e.stopPropagation(); $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkNote.focus(); });
     $bookmarkNote.addEventListener('input', () => { $clearNoteBtn.classList.toggle('visible', $bookmarkNote.value.length > 0); autoResizeTextarea(); });
+    $bookmarkNote.addEventListener('click', (e) => e.stopPropagation());
+
+    // --- Barra inferior: clic para alternar panel ---
+    $readerBottombar.addEventListener('click', (e) => {
+        // No alternar si se hizo clic en un botón interactivo o en la barra de progreso
+        if (e.target.closest('.opt-btn') || e.target.closest('#search-input') || 
+            e.target.closest('.clear-input-btn') || e.target.closest('#progress-bar-container') ||
+            e.target.closest('#options-panel')) {
+            return;
+        }
+        toggleOptionsPanel();
+    });
+
+    // Evitar que los botones del panel propaguen el clic hacia la barra inferior
+    document.querySelectorAll('.opt-btn').forEach(btn => btn.addEventListener('click', (e) => e.stopPropagation()));
+    $btnSearchResults.addEventListener('click', (e) => e.stopPropagation());
+    $('#progress-bar-container').addEventListener('click', (e) => e.stopPropagation());
 
     function showCommentEditor(bookId, currentComment) {
         currentBookCommentId = bookId;
         $commentTextarea.value = currentComment || '';
         $commentEditOverlay.classList.add('active');
     }
-
     function hideCommentEditor() {
         $commentEditOverlay.classList.remove('active');
         currentBookCommentId = null;
     }
-
     $btnCancelComment.addEventListener('click', hideCommentEditor);
     $commentEditOverlay.addEventListener('click', e => { if (e.target === $commentEditOverlay) hideCommentEditor(); });
     $btnSaveComment.addEventListener('click', async () => {
@@ -687,7 +885,7 @@
 
     let currentBookId = null, currentBookData = null, sectionDOMRefs = [], lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 };
     let saveTimer = null, isRestoring = false, scrollRAF = null, lastScroll = -1, bookStyleElement = null;
-    let optionsVisible = false, globalCharMapping = null, headerClickHandler = null;
+    let globalCharMapping = null;
 
     const FONT_SIZES = [0.9, 1.05, 1.2, 1.4, 1.6];
     let currentFontSizeIndex = 1;
@@ -700,34 +898,61 @@
     function applyFontSizeToDocument() {
         document.documentElement.style.fontSize = (FONT_SIZES[currentFontSizeIndex] * 100) + '%';
     }
-
     applyFontSizeToDocument();
 
     const $btnFontSize = document.getElementById('btn-font-size');
     if ($btnFontSize) {
-        $btnFontSize.addEventListener('click', () => {
+        $btnFontSize.addEventListener('click', (e) => {
+            e.stopPropagation();
             currentFontSizeIndex = (currentFontSizeIndex + 1) % FONT_SIZES.length;
             applyFontSizeToDocument();
             try { localStorage.setItem('reader_font_size_index', currentFontSizeIndex); } catch(e) {}
         });
     }
 
-    function renderChapterMarkers() { if (!currentBookData?.structure?.sections || !currentBookData.structure.totalPages) return; const totalPages = currentBookData.structure.totalPages, sections = currentBookData.structure.sections; $chapterMarkers.innerHTML = ''; sections.forEach(sec => { if (sec.globalStartPage === 0) return; const leftPercent = (sec.globalStartPage / totalPages) * 100; const marker = document.createElement('div'); marker.className = 'chapter-marker-item'; marker.style.left = leftPercent + '%'; $chapterMarkers.appendChild(marker); }); }
+    function renderChapterMarkers() {
+        if (!currentBookData?.structure?.sections || !currentBookData.structure.totalPages) return;
+        const totalPages = currentBookData.structure.totalPages, sections = currentBookData.structure.sections;
+        $chapterMarkers.innerHTML = '';
+        sections.forEach(sec => {
+            if (sec.globalStartPage === 0) return;
+            const leftPercent = (sec.globalStartPage / totalPages) * 100;
+            const marker = document.createElement('div');
+            marker.className = 'chapter-marker-item';
+            marker.style.left = leftPercent + '%';
+            $chapterMarkers.appendChild(marker);
+        });
+    }
 
     function getCurrentHeadingText(scrollTop) {
         const container = $readerContainer; if (!container) return null;
         const headings = container.querySelectorAll('.book-content h1, .book-content h2, .book-content h3, .book-content h4');
-        let current = null; const containerRect = container.getBoundingClientRect();
-        headings.forEach(h => { const rect = h.getBoundingClientRect(); const top = rect.top - containerRect.top + container.scrollTop; if (top <= scrollTop + 10) { current = h.textContent.trim(); } });
+        let current = null;
+        const containerRect = container.getBoundingClientRect();
+        headings.forEach(h => {
+            const rect = h.getBoundingClientRect();
+            const top = rect.top - containerRect.top + container.scrollTop;
+            if (top <= scrollTop + 10) current = h.textContent.trim();
+        });
         return current;
     }
 
     function openBookForReading(bookId) {
-        if (saveTimer) clearTimeout(saveTimer); if (scrollRAF) cancelAnimationFrame(scrollRAF); cleanupScrollDetection(); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; }
-        $readerContainer.innerHTML = ''; sectionDOMRefs = []; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; lastScroll = -1; currentBookId = bookId; optionsVisible = false; $optionsPanel.classList.remove('visible'); $searchInput.value = ''; $clearSearchBtn.classList.remove('visible');
-        $backLinkBtn.classList.remove('show'); lastLinkScroll = null;
+        if (saveTimer) clearTimeout(saveTimer);
+        if (scrollRAF) cancelAnimationFrame(scrollRAF);
+        cleanupScrollDetection();
+        if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; }
+        $readerContainer.innerHTML = '';
+        sectionDOMRefs = [];
+        lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 };
+        isRestoring = false; lastScroll = -1; currentBookId = bookId;
+        optionsVisible = true;
+        $optionsPanel.classList.add('visible');
+        $searchInput.value = '';
+        $clearSearchBtn.classList.remove('visible');
+        $backLinkBtn.classList.remove('show');
+        lastLinkScroll = null;
 
-        // Inicia el reloj en la cabecera
         updateClock();
         if (window._clockInterval) clearInterval(window._clockInterval);
         window._clockInterval = setInterval(updateClock, 1000);
@@ -737,7 +962,9 @@
             bookData.lastOpened = Date.now();
             dbAddBook(bookData).catch(() => {});
 
-            currentBookData = bookData; globalCharMapping = []; let charCounter = 0;
+            currentBookData = bookData;
+            globalCharMapping = [];
+            let charCounter = 0;
             bookData.structure.sections.forEach(sec => {
                 const pages = splitIntoPages(sec.htmlContent ? stripHtml(sec.htmlContent) : '', 2000);
                 pages.forEach((page, pIdx) => {
@@ -745,19 +972,45 @@
                     charCounter += page.length;
                 });
             });
-            $libraryScreen.classList.add('hidden'); $readerScreen.classList.remove('hidden');
-            $headerChapterTitle.textContent = '--'; $indPagesLeftChapter.textContent = '--'; $infoPercent.textContent = '--'; $infoPagesLeft.textContent = '--'; $infoCenter.textContent = '--'; $progressBarFill.style.width = '0%'; renderChapterMarkers();
-            if (bookData.structure.bookStyles) { bookStyleElement = document.createElement('style'); bookStyleElement.textContent = `#reader-container .book-content { ${bookData.structure.bookStyles} }`; document.head.appendChild(bookStyleElement); }
+            $libraryScreen.classList.add('hidden');
+            $readerScreen.classList.remove('hidden');
+            $headerChapterTitle.textContent = '--';
+            $indPagesLeftChapter.textContent = '--';
+            $infoCenter.textContent = '--';
+            $infoPercent.textContent = '--';
+            $infoPagesLeft.textContent = '--';
+            $progressBarFill.style.width = '0%';
+            renderChapterMarkers();
+            if (bookData.structure.bookStyles) {
+                bookStyleElement = document.createElement('style');
+                bookStyleElement.textContent = `#reader-container .book-content { ${bookData.structure.bookStyles} }`;
+                document.head.appendChild(bookStyleElement);
+            }
             let fullHTML = '<div class="book-content">';
-            bookData.structure.sections.forEach((sec, idx) => { fullHTML += `<div class="chapter-marker" data-chapter-index="${idx}" style="height:0;"></div>`; fullHTML += sec.htmlContent || `<p>${escapeHtml(sec.title || '')}</p>`; });
-            fullHTML += '</div>'; $readerContainer.innerHTML = fullHTML;
-
+            bookData.structure.sections.forEach((sec, idx) => {
+                fullHTML += `<div class="chapter-marker" data-chapter-index="${idx}" style="height:0;"></div>`;
+                fullHTML += sec.htmlContent || `<p>${escapeHtml(sec.title || '')}</p>`;
+            });
+            fullHTML += '</div>';
+            $readerContainer.innerHTML = fullHTML;
             applyFontSizeToDocument();
 
             const bookContent = $readerContainer.querySelector('.book-content');
             if (bookContent) {
-                const hrs = bookContent.querySelectorAll('hr'); hrs.forEach(hr => { const separator = document.createElement('div'); separator.className = 'chapter-separator'; hr.parentNode.replaceChild(separator, hr); });
-                const markers = bookContent.querySelectorAll('.chapter-marker'); markers.forEach((marker, index) => { if (index > 0) { const separator = document.createElement('div'); separator.className = 'chapter-separator'; marker.parentNode.insertBefore(separator, marker); } });
+                const hrs = bookContent.querySelectorAll('hr');
+                hrs.forEach(hr => {
+                    const separator = document.createElement('div');
+                    separator.className = 'chapter-separator';
+                    hr.parentNode.replaceChild(separator, hr);
+                });
+                const markers = bookContent.querySelectorAll('.chapter-marker');
+                markers.forEach((marker, index) => {
+                    if (index > 0) {
+                        const separator = document.createElement('div');
+                        separator.className = 'chapter-separator';
+                        marker.parentNode.insertBefore(separator, marker);
+                    }
+                });
             }
 
             $readerContainer.addEventListener('click', e => {
@@ -812,89 +1065,303 @@
 
             waitForImages($readerContainer).then(() => {
                 measureSectionPositions();
-                dbGetProgress(bookId).then(progress => { 
-                    if (progress && progress.globalPage > 0) { 
-                        isRestoring = true; 
-                        restoreScrollPosition(progress); 
+                dbGetProgress(bookId).then(progress => {
+                    if (progress && progress.globalPage > 0) {
+                        isRestoring = true;
+                        restoreScrollPosition(progress);
                     } else {
                         updatePositionFromScroll();
                     }
-                }); 
+                });
                 setupScrollDetection();
             });
         }).catch(err => { console.error('Error al abrir libro:', err); alert('Error al cargar el libro.'); });
     }
 
-    function getGlobalPageFromCharIndex(charIndex) { if (!globalCharMapping) return { globalPage:1, percent:0 }; const total = currentBookData.structure.totalPages || 1; for (const map of globalCharMapping) { if (charIndex >= map.start && charIndex < map.end) return { globalPage: map.globalPage, percent: Math.round((map.globalPage/total)*100) }; } return { globalPage:1, percent:0 }; }
+    function getGlobalPageFromCharIndex(charIndex) {
+        if (!globalCharMapping) return { globalPage:1, percent:0 };
+        const total = currentBookData.structure.totalPages || 1;
+        for (const map of globalCharMapping) {
+            if (charIndex >= map.start && charIndex < map.end) return { globalPage: map.globalPage, percent: Math.round((map.globalPage/total)*100) };
+        }
+        return { globalPage:1, percent:0 };
+    }
 
-    function measureSectionPositions() { if (!currentBookData?.structure?.sections) return; sectionDOMRefs = []; const markers = $readerContainer.querySelectorAll('.chapter-marker'); markers.forEach(marker => { const idx = parseInt(marker.dataset.chapterIndex,10); const rect = marker.getBoundingClientRect(); const containerRect = $readerContainer.getBoundingClientRect(); const top = rect.top - containerRect.top + $readerContainer.scrollTop; let nextMarker = marker.nextElementSibling; while (nextMarker && !nextMarker.classList.contains('chapter-marker')) nextMarker = nextMarker.nextElementSibling; let height; if (nextMarker) { const nextRect = nextMarker.getBoundingClientRect(); height = (nextRect.top - containerRect.top + $readerContainer.scrollTop) - top; } else height = $readerContainer.scrollHeight - top; sectionDOMRefs.push({ index: idx, offsetTop: top, height: Math.max(height,100) }); }); if (sectionDOMRefs.length === 0 && currentBookData.structure.sections.length > 0) sectionDOMRefs.push({ index:0, offsetTop:0, height: $readerContainer.scrollHeight }); }
+    function measureSectionPositions() {
+        if (!currentBookData?.structure?.sections) return;
+        sectionDOMRefs = [];
+        const markers = $readerContainer.querySelectorAll('.chapter-marker');
+        markers.forEach(marker => {
+            const idx = parseInt(marker.dataset.chapterIndex,10);
+            const rect = marker.getBoundingClientRect();
+            const containerRect = $readerContainer.getBoundingClientRect();
+            const top = rect.top - containerRect.top + $readerContainer.scrollTop;
+            let nextMarker = marker.nextElementSibling;
+            while (nextMarker && !nextMarker.classList.contains('chapter-marker')) nextMarker = nextMarker.nextElementSibling;
+            let height;
+            if (nextMarker) {
+                const nextRect = nextMarker.getBoundingClientRect();
+                height = (nextRect.top - containerRect.top + $readerContainer.scrollTop) - top;
+            } else height = $readerContainer.scrollHeight - top;
+            sectionDOMRefs.push({ index: idx, offsetTop: top, height: Math.max(height,100) });
+        });
+        if (sectionDOMRefs.length === 0 && currentBookData.structure.sections.length > 0)
+            sectionDOMRefs.push({ index:0, offsetTop:0, height: $readerContainer.scrollHeight });
+    }
 
-    function findCurrentSection(scrollTop) { const container = $readerContainer; const clientHeight = container.clientHeight; const triggerY = clientHeight * 0.33; for (let i = sectionDOMRefs.length-1; i>=0; i--) { if (scrollTop >= sectionDOMRefs[i].offsetTop - triggerY) return sectionDOMRefs[i]; } return sectionDOMRefs[0] || null; }
+    function findCurrentSection(scrollTop) {
+        const container = $readerContainer;
+        const clientHeight = container.clientHeight;
+        const triggerY = clientHeight * 0.33;
+        for (let i = sectionDOMRefs.length-1; i>=0; i--) {
+            if (scrollTop >= sectionDOMRefs[i].offsetTop - triggerY) return sectionDOMRefs[i];
+        }
+        return sectionDOMRefs[0] || null;
+    }
 
-    function updatePositionFromScroll() { if (!currentBookData?.structure?.sections || isRestoring) return; const container = $readerContainer; const st = container.scrollTop; const sh = container.scrollHeight; const ch = container.clientHeight; if (sh <= ch) { updateIndicators(1,0,1); return; } const sec = findCurrentSection(st); if (!sec) return; const idx = sec.index; const sections = currentBookData.structure.sections; if (idx >= sections.length) return; const sData = sections[idx]; const start = sec.offsetTop; const height = sec.height || 1; const progress = Math.max(0, Math.min(1, (st-start)/height)); const pageInChapter = Math.min(Math.floor(progress*sData.pageCount)+1, sData.pageCount||1); const globalPage = sData.globalStartPage + pageInChapter; updateIndicators(Math.max(1, Math.min(globalPage, currentBookData.structure.totalPages||1)), idx, Math.max(1, pageInChapter)); const totalPages = currentBookData.structure.totalPages||1; const percent = Math.round((globalPage/totalPages)*100); $progressBarFill.style.width = percent+'%'; }
+    function updatePositionFromScroll() {
+        if (!currentBookData?.structure?.sections || isRestoring) return;
+        const container = $readerContainer;
+        const st = container.scrollTop;
+        const sh = container.scrollHeight;
+        const ch = container.clientHeight;
+        if (sh <= ch) { updateIndicators(1,0,1); updateChapterTitle(); return; }
+        const sec = findCurrentSection(st);
+        if (!sec) return;
+        const idx = sec.index;
+        const sections = currentBookData.structure.sections;
+        if (idx >= sections.length) return;
+        const sData = sections[idx];
+        const start = sec.offsetTop;
+        const height = sec.height || 1;
+        const progress = Math.max(0, Math.min(1, (st-start)/height));
+        const pageInChapter = Math.min(Math.floor(progress*sData.pageCount)+1, sData.pageCount||1);
+        const globalPage = sData.globalStartPage + pageInChapter;
+        updateIndicators(Math.max(1, Math.min(globalPage, currentBookData.structure.totalPages||1)), idx, Math.max(1, pageInChapter));
+        updateChapterTitle(st);
+    }
 
-    function flashProgress() { $readerHeader.classList.add('progress-flash'); setTimeout(() => $readerHeader.classList.remove('progress-flash'), 150); }
+    function updateChapterTitle(st) {
+        if (!st) st = $readerContainer.scrollTop;
+        const heading = getCurrentHeadingText(st);
+        $headerChapterTitle.textContent = heading || (currentBookData?.structure?.sections[lastRawData.chapterIdx]?.title) || '--';
+    }
+
+    function flashProgress() {
+        $readerTopbar.classList.add('progress-flash');
+        setTimeout(() => $readerTopbar.classList.remove('progress-flash'), 150);
+    }
 
     function updateIndicators(gPage, chIdx, chPage) {
-        const s = currentBookData?.structure; if (!s) return;
-        const sec = s.sections[chIdx]; if (!sec) return;
-        const chTotal = sec.pageCount||1; const totalPages = s.totalPages||1;
+        const s = currentBookData?.structure;
+        if (!s) return;
+        const sec = s.sections[chIdx];
+        if (!sec) return;
+        const chTotal = sec.pageCount||1;
+        const totalPages = s.totalPages||1;
         const prevGlobalPage = lastRawData.globalPage;
         if (gPage === lastRawData.globalPage && chIdx === lastRawData.chapterIdx && chPage === lastRawData.chapterPage) return;
         lastRawData = { globalPage: gPage, chapterIdx: chIdx, chapterPage: chPage };
         const pagesLeftChapter = Math.max(1, chTotal - chPage + 1);
         const percent = Math.round((gPage/totalPages)*100);
         const pagesLeftBook = Math.max(0, totalPages - gPage);
-        const totalWords = s.totalWords||0; const wordsRemaining = Math.floor(totalWords * (1 - percent/100));
-        const totalMinutes = Math.ceil(wordsRemaining/285); let timeText = '--';
-        if (totalMinutes > 0) { if (totalMinutes >= 60) { const hours = Math.floor(totalMinutes/60); const mins = totalMinutes%60; timeText = `${hours} h ${mins} m`; } else { timeText = `${totalMinutes} m`; } }
-        $indPagesLeftChapter.textContent = pagesLeftChapter; $infoPercent.textContent = percent+'%'; $infoPagesLeft.textContent = pagesLeftBook;
-        // Ya no se actualiza el título del capítulo en el centro (ahora muestra la hora)
-        // $headerChapterTitle.textContent = headingText || sec.title || '--';  <-- Eliminado
+        const totalWords = s.totalWords||0;
+        const wordsRemaining = Math.floor(totalWords * (1 - percent/100));
+        const totalMinutes = Math.ceil(wordsRemaining/285);
+        let timeText = '--';
+        if (totalMinutes > 0) {
+            if (totalMinutes >= 60) {
+                const hours = Math.floor(totalMinutes/60);
+                const mins = totalMinutes%60;
+                timeText = `${hours} h ${mins} m`;
+            } else {
+                timeText = `${totalMinutes} m`;
+            }
+        }
         $infoCenter.textContent = timeText;
+        $indPagesLeftChapter.textContent = pagesLeftChapter;
+        $infoPercent.textContent = percent+'%';
+        $infoPagesLeft.textContent = pagesLeftBook;
         scheduleProgressSave(gPage, chIdx, chPage);
-        if (gPage !== prevGlobalPage) { flashProgress(); }
+        $progressBarFill.style.width = percent+'%';
+        if (gPage !== prevGlobalPage) flashProgress();
     }
 
-    function scheduleProgressSave(gPage, chIdx, chPage) { clearTimeout(saveTimer); saveTimer = setTimeout(async () => { if (!currentBookId) return; const top = $readerContainer.scrollTop; await dbSaveProgress(currentBookId, { globalPage: gPage, spineIndex: chIdx, pageInChapter: chPage, scrollTop: top, totalPages: currentBookData?.structure?.totalPages || 0 }); try { localStorage.setItem('last_progress_v91_'+currentBookId, JSON.stringify({ gPage, chIdx, chPage, top, ts: Date.now() })); } catch(e) {} }, 1000); }
+    function scheduleProgressSave(gPage, chIdx, chPage) {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(async () => {
+            if (!currentBookId) return;
+            const top = $readerContainer.scrollTop;
+            await dbSaveProgress(currentBookId, { globalPage: gPage, spineIndex: chIdx, pageInChapter: chPage, scrollTop: top, totalPages: currentBookData?.structure?.totalPages || 0 });
+            try { localStorage.setItem('last_progress_v91_'+currentBookId, JSON.stringify({ gPage, chIdx, chPage, top, ts: Date.now() })); } catch(e) {}
+        }, 1000);
+    }
 
-    function toggleOptionsPanel() { optionsVisible = !optionsVisible; $optionsPanel.classList.toggle('visible', optionsVisible); }
+    function setupScrollDetection() {
+        const container = $readerContainer;
+        const scrollHandler = () => {
+            if (scrollRAF) return;
+            scrollRAF = requestAnimationFrame(() => {
+                scrollRAF = null;
+                const st = container.scrollTop;
+                if (Math.abs(st-lastScroll) > 2) {
+                    lastScroll = st;
+                    if (!isRestoring) updatePositionFromScroll();
+                }
+            });
+        };
+        container.addEventListener('scroll', scrollHandler, { passive: true });
+        container._scrollHandler = scrollHandler;
 
-    function setupScrollDetection() { const container = $readerContainer; const scrollHandler = () => { if (scrollRAF) return; scrollRAF = requestAnimationFrame(() => { scrollRAF = null; const st = container.scrollTop; if (Math.abs(st-lastScroll) > 2) { lastScroll = st; if (!isRestoring) updatePositionFromScroll(); } }); }; container.addEventListener('scroll', scrollHandler, { passive: true }); container._scrollHandler = scrollHandler; if (headerClickHandler) $readerHeader.removeEventListener('click', headerClickHandler); headerClickHandler = (e) => { e.stopPropagation(); toggleOptionsPanel(); }; $readerHeader.addEventListener('click', headerClickHandler); window.addEventListener('resize', () => { clearTimeout(window._resizeTimer); window._resizeTimer = setTimeout(() => { measureSectionPositions(); updatePositionFromScroll(); }, 400); }); }
+        window.addEventListener('resize', () => {
+            clearTimeout(window._resizeTimer);
+            window._resizeTimer = setTimeout(() => {
+                measureSectionPositions();
+                updatePositionFromScroll();
+            }, 400);
+        });
+    }
 
-    function cleanupScrollDetection() { const container = $readerContainer; if (container._scrollHandler) { container.removeEventListener('scroll', container._scrollHandler); container._scrollHandler = null; } if (headerClickHandler) { $readerHeader.removeEventListener('click', headerClickHandler); headerClickHandler = null; } if (scrollRAF) cancelAnimationFrame(scrollRAF); clearTimeout(saveTimer); clearTimeout(window._resizeTimer); if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; } }
+    function cleanupScrollDetection() {
+        const container = $readerContainer;
+        if (container._scrollHandler) {
+            container.removeEventListener('scroll', container._scrollHandler);
+            container._scrollHandler = null;
+        }
+        if (scrollRAF) cancelAnimationFrame(scrollRAF);
+        clearTimeout(saveTimer);
+        clearTimeout(window._resizeTimer);
+        if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; }
+    }
 
-    async function restoreScrollPosition(progress) { await new Promise(r => setTimeout(r, 400)); measureSectionPositions(); const container = $readerContainer; const sh = container.scrollHeight; const ch = container.clientHeight; if (typeof progress.scrollTop === 'number' && progress.scrollTop > 0 && progress.scrollTop < sh) container.scrollTop = progress.scrollTop; else container.scrollTop = Math.max(0, (progress.globalPage/(progress.totalPages||1))*(sh-ch)); setTimeout(() => { if (container.scrollTop < 5 && progress.scrollTop > 100) container.scrollTop = progress.scrollTop; isRestoring = false; measureSectionPositions(); updatePositionFromScroll(); }, 400); }
+    async function restoreScrollPosition(progress) {
+        await new Promise(r => setTimeout(r, 400));
+        measureSectionPositions();
+        const container = $readerContainer;
+        const sh = container.scrollHeight;
+        const ch = container.clientHeight;
+        if (typeof progress.scrollTop === 'number' && progress.scrollTop > 0 && progress.scrollTop < sh)
+            container.scrollTop = progress.scrollTop;
+        else
+            container.scrollTop = Math.max(0, (progress.globalPage/(progress.totalPages||1))*(sh-ch));
+        setTimeout(() => {
+            if (container.scrollTop < 5 && progress.scrollTop > 100) container.scrollTop = progress.scrollTop;
+            isRestoring = false;
+            measureSectionPositions();
+            updatePositionFromScroll();
+        }, 400);
+    }
 
-    function closeReader() { 
+    function closeReader() {
         if (window._clockInterval) { clearInterval(window._clockInterval); window._clockInterval = null; }
-        if (isClosingReader) return; isClosingReader = true; cleanupScrollDetection(); $readerContainer.innerHTML = ''; sectionDOMRefs = []; currentBookId = null; currentBookData = null; globalCharMapping = null; lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 }; isRestoring = false; $readerScreen.classList.add('hidden'); $libraryScreen.classList.remove('hidden'); if (history.state && history.state.screen === 'reader') history.back(); exitFullscreen(); renderLibrary(); setTimeout(() => { isClosingReader = false; }, 300); }
+        if (isClosingReader) return;
+        isClosingReader = true;
+        cleanupScrollDetection();
+        $readerContainer.innerHTML = '';
+        sectionDOMRefs = [];
+        currentBookId = null;
+        currentBookData = null;
+        globalCharMapping = null;
+        lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 };
+        isRestoring = false;
+        $readerScreen.classList.add('hidden');
+        $libraryScreen.classList.remove('hidden');
+        if (history.state && history.state.screen === 'reader') history.back();
+        exitFullscreen();
+        renderLibrary();
+        setTimeout(() => { isClosingReader = false; }, 300);
+    }
 
     window.addEventListener('popstate', e => { if (e.state && e.state.screen === 'reader') closeReader(); });
 
     function escapeRegExp(string) { return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-    function highlightTemporary(node, start, length) { const range = document.createRange(); range.setStart(node, Math.min(start, node.textContent.length)); range.setEnd(node, Math.min(start+length, node.textContent.length)); const span = document.createElement('span'); span.className = 'temp-highlight'; try { range.surroundContents(span); } catch(e) { return; } setTimeout(() => { span.style.backgroundColor = 'transparent'; }, 600); setTimeout(() => { if (span.parentNode) { const parent = span.parentNode; while (span.firstChild) parent.insertBefore(span.firstChild, span); parent.removeChild(span); parent.normalize(); } }, 1200); }
+    function highlightTemporary(node, start, length) {
+        const range = document.createRange();
+        range.setStart(node, Math.min(start, node.textContent.length));
+        range.setEnd(node, Math.min(start+length, node.textContent.length));
+        const span = document.createElement('span');
+        span.className = 'temp-highlight';
+        try { range.surroundContents(span); } catch(e) { return; }
+        setTimeout(() => { span.style.backgroundColor = 'transparent'; }, 600);
+        setTimeout(() => {
+            if (span.parentNode) {
+                const parent = span.parentNode;
+                while (span.firstChild) parent.insertBefore(span.firstChild, span);
+                parent.removeChild(span);
+                parent.normalize();
+            }
+        }, 1200);
+    }
 
-    function performSearch(term) { if (!term || term.length < 2) { $searchResultsList.innerHTML = '<p style="text-align:center;color:#999;">Introduce al menos 2 caracteres</p>'; return; } const text = $readerContainer.textContent || ''; const regex = new RegExp(escapeRegExp(term), 'gi'); const matches = []; let match; while ((match = regex.exec(text)) !== null) { const charIndex = match.index; const { globalPage, percent } = getGlobalPageFromCharIndex(charIndex); const start = Math.max(0, charIndex-40); const end = Math.min(text.length, charIndex+term.length+40); let context = text.substring(start, end); if (start > 0) context = '…'+context; if (end < text.length) context += '…'; matches.push({ charIndex, context, globalPage, percent, term }); if (matches.length >= 50) break; } if (matches.length === 0) { $searchResultsList.innerHTML = '<p style="text-align:center;color:#999;">Sin resultados</p>'; return; } let html = ''; matches.forEach(m => { const highlightedContext = m.context.replace(new RegExp(escapeRegExp(m.term), 'gi'), `<span class="highlight">$&</span>`); html += `<div class="search-result-item" data-position="${m.charIndex}" data-term="${escapeHtml(m.term)}"><div>${highlightedContext}</div><div class="meta">Pág. ${m.globalPage} · ${m.percent}%</div></div>`; }); $searchResultsList.innerHTML = html; document.querySelectorAll('.search-result-item').forEach(item => { item.addEventListener('click', function() { const pos = parseInt(this.dataset.position); const term = this.dataset.term; const walker = document.createTreeWalker($readerContainer, NodeFilter.SHOW_TEXT, null, false); let currentPos = 0, targetNode = null, offset = 0; while (walker.nextNode()) { const node = walker.currentNode; const len = node.textContent.length; if (currentPos + len > pos) { targetNode = node; offset = pos - currentPos; break; } currentPos += len; } if (targetNode) { const containerRect = $readerContainer.getBoundingClientRect(); const range = document.createRange(); range.setStart(targetNode, Math.min(offset, targetNode.textContent.length)); range.collapse(true); const rect = range.getClientRects()[0]; if (rect) { const scrollTop = rect.top - containerRect.top + $readerContainer.scrollTop - 100; $readerContainer.scrollTo({ top: scrollTop, behavior:'smooth' }); setTimeout(() => { highlightTemporary(targetNode, offset, term.length); }, 600); } } $searchResultsOverlay.classList.remove('active'); hideOptionsPanel(); }); }); }
+    function performSearch(term) {
+        if (!term || term.length < 2) { $searchResultsList.innerHTML = '<p style="text-align:center;color:#999;">Introduce al menos 2 caracteres</p>'; return; }
+        const text = $readerContainer.textContent || '';
+        const regex = new RegExp(escapeRegExp(term), 'gi');
+        const matches = [];
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+            const charIndex = match.index;
+            const { globalPage, percent } = getGlobalPageFromCharIndex(charIndex);
+            const start = Math.max(0, charIndex-40);
+            const end = Math.min(text.length, charIndex+term.length+40);
+            let context = text.substring(start, end);
+            if (start > 0) context = '…'+context;
+            if (end < text.length) context += '…';
+            matches.push({ charIndex, context, globalPage, percent, term });
+            if (matches.length >= 50) break;
+        }
+        if (matches.length === 0) { $searchResultsList.innerHTML = '<p style="text-align:center;color:#999;">Sin resultados</p>'; return; }
+        let html = '';
+        matches.forEach(m => {
+            const highlightedContext = m.context.replace(new RegExp(escapeRegExp(m.term), 'gi'), `<span class="highlight">$&</span>`);
+            html += `<div class="search-result-item" data-position="${m.charIndex}" data-term="${escapeHtml(m.term)}"><div>${highlightedContext}</div><div class="meta">Pág. ${m.globalPage} · ${m.percent}%</div></div>`;
+        });
+        $searchResultsList.innerHTML = html;
+        document.querySelectorAll('.search-result-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const pos = parseInt(this.dataset.position);
+                const term = this.dataset.term;
+                const walker = document.createTreeWalker($readerContainer, NodeFilter.SHOW_TEXT, null, false);
+                let currentPos = 0, targetNode = null, offset = 0;
+                while (walker.nextNode()) {
+                    const node = walker.currentNode;
+                    const len = node.textContent.length;
+                    if (currentPos + len > pos) { targetNode = node; offset = pos - currentPos; break; }
+                    currentPos += len;
+                }
+                if (targetNode) {
+                    const containerRect = $readerContainer.getBoundingClientRect();
+                    const range = document.createRange();
+                    range.setStart(targetNode, Math.min(offset, targetNode.textContent.length));
+                    range.collapse(true);
+                    const rect = range.getClientRects()[0];
+                    if (rect) {
+                        const scrollTop = rect.top - containerRect.top + $readerContainer.scrollTop - 100;
+                        $readerContainer.scrollTo({ top: scrollTop, behavior:'smooth' });
+                        setTimeout(() => { highlightTemporary(targetNode, offset, term.length); }, 600);
+                    }
+                }
+                $searchResultsOverlay.classList.remove('active');
+                hideOptionsPanel();
+            });
+        });
+    }
 
-    $btnSearchResults.addEventListener('click', () => { const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); });
+    $btnSearchResults.addEventListener('click', (e) => { e.stopPropagation(); const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); });
     $searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') { const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); } });
     $searchResultsOverlay.addEventListener('click', e => { if (e.target === $searchResultsOverlay) $searchResultsOverlay.classList.remove('active'); });
 
     function buildFlatIndex() {
         const container = $readerContainer;
         if (!container || !currentBookData) return [];
-
         const allMarkers = container.querySelectorAll('.chapter-marker');
         const headings = container.querySelectorAll('.book-content h1, .book-content h2, .book-content h3, .book-content h4');
         const items = [];
-
         headings.forEach(h => {
             const rect = h.getBoundingClientRect();
             const top = rect.top - container.getBoundingClientRect().top + container.scrollTop;
             const level = parseInt(h.tagName.substring(1));
-
             let rawTitle = h.textContent.trim();
             let displayTitle = rawTitle;
             for (const fmTitle of FRONT_MATTER_TITLES) {
@@ -904,22 +1371,14 @@
                 }
             }
             displayTitle = separateNumberFromTitle(displayTitle);
-
             let sectionIndex = -1;
             let markerBefore = null;
             for (const marker of allMarkers) {
-                if (marker.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING) {
-                    markerBefore = marker;
-                } else {
-                    break;
-                }
+                if (marker.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING) markerBefore = marker;
+                else break;
             }
-            if (markerBefore) {
-                sectionIndex = parseInt(markerBefore.dataset.chapterIndex, 10);
-            } else {
-                sectionIndex = 0;
-            }
-
+            if (markerBefore) sectionIndex = parseInt(markerBefore.dataset.chapterIndex, 10);
+            else sectionIndex = 0;
             let globalPage = 1;
             if (sectionIndex >= 0 && currentBookData.structure.sections[sectionIndex]) {
                 const sec = currentBookData.structure.sections[sectionIndex];
@@ -931,13 +1390,10 @@
                 const pageInChapter = Math.min(Math.floor(progress * sec.pageCount) + 1, sec.pageCount || 1);
                 globalPage = sec.globalStartPage + pageInChapter;
             }
-
             const totalPages = currentBookData?.structure?.totalPages || 1;
             const percent = Math.round((globalPage / totalPages) * 100);
-
             items.push({ title: displayTitle, level, top, globalPage, percent, sectionIndex });
         });
-
         return items;
     }
 
@@ -947,31 +1403,23 @@
         const threshold = st + ch * 0.4;
         const currentSection = findCurrentSection(st);
         const currentChapterIdx = currentSection ? currentSection.index : -1;
-
         let currentIdx = -1;
-
         if (currentChapterIdx >= 0) {
             const sectionItems = items.filter(item => item.sectionIndex === currentChapterIdx);
             if (sectionItems.length > 0) {
                 let bestItem = null;
                 for (const item of sectionItems) {
-                    if (item.top <= threshold) {
-                        bestItem = item;
-                    }
+                    if (item.top <= threshold) bestItem = item;
                 }
-                if (!bestItem) {
-                    bestItem = sectionItems[0];
-                }
+                if (!bestItem) bestItem = sectionItems[0];
                 currentIdx = items.indexOf(bestItem);
             }
         }
-
         if (currentIdx === -1) {
             for (let i = 0; i < items.length; i++) {
                 if (items[i].top <= threshold) currentIdx = i;
             }
         }
-
         containerEl.innerHTML = '';
         let currentElement = null;
         items.forEach((item, idx) => {
@@ -982,9 +1430,7 @@
                 div.classList.add('current-chapter-bg');
                 currentElement = div;
             }
-            if (FRONT_MATTER_TITLES.includes(item.title)) {
-                div.classList.add('front-matter-item');
-            }
+            if (FRONT_MATTER_TITLES.includes(item.title)) div.classList.add('front-matter-item');
             div.innerHTML = `<span class="chapter-title">${escapeHtml(item.title)}</span><span class="chapter-page"><span>${item.globalPage}</span><span style="margin-left:12px;">${item.percent}%</span></span>`;
             div.addEventListener('click', () => {
                 const targetScroll = item.top - $readerContainer.clientHeight * 0.40;
@@ -994,15 +1440,13 @@
             });
             containerEl.appendChild(div);
         });
-
         if (currentElement) {
-            setTimeout(() => {
-                currentElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
-            }, 100);
+            setTimeout(() => { currentElement.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 100);
         }
     }
 
-    $btnChapters.addEventListener('click', () => {
+    $btnChapters.addEventListener('click', (e) => {
+        e.stopPropagation();
         measureSectionPositions();
         const items = buildFlatIndex();
         if (items.length === 0) {
@@ -1016,24 +1460,95 @@
 
     function autoResizeTextarea() { const textarea = $bookmarkNote; textarea.style.height = 'auto'; textarea.style.height = (textarea.scrollHeight) + 'px'; }
 
-    async function renderBookmarks() { if (!currentBookId) return; const bookmarks = await dbGetBookmarks(currentBookId); $bookmarksList.innerHTML = ''; if (bookmarks.length === 0) { $bookmarksList.innerHTML = '<p style="text-align:center;color:#999;">No hay marcadores</p>'; return; } const table = document.createElement('table'); table.className = 'bookmark-table'; bookmarks.forEach(bm => { const row = table.insertRow(); const cellPage = row.insertCell(); cellPage.textContent = `Pág. ${bm.globalPage}`; cellPage.className = 'bm-page'; const cellNote = row.insertCell(); cellNote.textContent = bm.note || ''; cellNote.className = bm.note ? 'bm-note' : ''; if (!bm.note) cellNote.style.color = '#aaa'; const cellActions = row.insertCell(); cellActions.className = 'bm-actions'; const actionBtn = document.createElement('button'); const isEditing = (editingBookmarkId === bm.id); actionBtn.innerHTML = isEditing ? '×' : '✎'; actionBtn.title = isEditing ? 'Eliminar marcador' : 'Editar nota'; actionBtn.addEventListener('click', async e => { e.stopPropagation(); if (isEditing) { await dbDeleteBookmark(bm.id); editingBookmarkId = null; $bookmarkForm.style.display = 'none'; autoResizeTextarea(); } else { editingBookmarkId = bm.id; $bookmarkNote.value = bm.note || ''; $clearNoteBtn.classList.toggle('visible', bm.note && bm.note.length > 0); autoResizeTextarea(); $bookmarkForm.style.display = 'flex'; $bookmarkNote.focus(); } renderBookmarks(); }); cellActions.appendChild(actionBtn); row.addEventListener('click', () => { const totalPages = currentBookData?.structure?.totalPages || 1; const scrollTarget = (bm.globalPage / totalPages) * $readerContainer.scrollHeight; $readerContainer.scrollTo({ top: scrollTarget, behavior:'smooth' }); $bookmarksOverlay.classList.remove('active'); hideOptionsPanel(); }); }); $bookmarksList.appendChild(table); }
+    async function renderBookmarks() {
+        if (!currentBookId) return;
+        const bookmarks = await dbGetBookmarks(currentBookId);
+        $bookmarksList.innerHTML = '';
+        if (bookmarks.length === 0) { $bookmarksList.innerHTML = '<p style="text-align:center;color:#999;">No hay marcadores</p>'; return; }
+        const table = document.createElement('table');
+        table.className = 'bookmark-table';
+        bookmarks.forEach(bm => {
+            const row = table.insertRow();
+            const cellPage = row.insertCell(); cellPage.textContent = `Pág. ${bm.globalPage}`; cellPage.className = 'bm-page';
+            const cellNote = row.insertCell(); cellNote.textContent = bm.note || ''; cellNote.className = bm.note ? 'bm-note' : ''; if (!bm.note) cellNote.style.color = '#aaa';
+            const cellActions = row.insertCell(); cellActions.className = 'bm-actions';
+            const actionBtn = document.createElement('button');
+            const isEditing = (editingBookmarkId === bm.id);
+            actionBtn.innerHTML = isEditing ? '×' : '✎';
+            actionBtn.title = isEditing ? 'Eliminar marcador' : 'Editar nota';
+            actionBtn.addEventListener('click', async e => {
+                e.stopPropagation();
+                if (isEditing) { await dbDeleteBookmark(bm.id); editingBookmarkId = null; $bookmarkForm.style.display = 'none'; autoResizeTextarea(); }
+                else { editingBookmarkId = bm.id; $bookmarkNote.value = bm.note || ''; $clearNoteBtn.classList.toggle('visible', bm.note && bm.note.length > 0); autoResizeTextarea(); $bookmarkForm.style.display = 'flex'; $bookmarkNote.focus(); }
+                renderBookmarks();
+            });
+            cellActions.appendChild(actionBtn);
+            row.addEventListener('click', () => {
+                const totalPages = currentBookData?.structure?.totalPages || 1;
+                const scrollTarget = (bm.globalPage / totalPages) * $readerContainer.scrollHeight;
+                $readerContainer.scrollTo({ top: scrollTarget, behavior:'smooth' });
+                $bookmarksOverlay.classList.remove('active');
+                hideOptionsPanel();
+            });
+        });
+        $bookmarksList.appendChild(table);
+    }
 
-    $btnBookmarks.addEventListener('click', () => { editingBookmarkId = null; $bookmarkForm.style.display = 'none'; renderBookmarks(); $bookmarksOverlay.classList.add('active'); });
-    $btnAddBookmark.addEventListener('click', () => { editingBookmarkId = null; $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkForm.style.display = 'flex'; $bookmarkNote.focus(); renderBookmarks(); });
-    $btnCancelBookmark.addEventListener('click', () => { editingBookmarkId = null; $bookmarkForm.style.display = 'none'; $bookmarkNote.value = ''; autoResizeTextarea(); renderBookmarks(); });
-    $btnSaveBookmark.addEventListener('click', async () => { const note = $bookmarkNote.value.trim(); if (editingBookmarkId) { await dbUpdateBookmark(editingBookmarkId, note); editingBookmarkId = null; } else { const globalPage = lastRawData.globalPage > 0 ? lastRawData.globalPage : 1; await dbAddBookmark({ bookId: currentBookId, globalPage, note }); } $bookmarkForm.style.display = 'none'; $bookmarkNote.value = ''; autoResizeTextarea(); renderBookmarks(); });
+    $btnBookmarks.addEventListener('click', (e) => { e.stopPropagation(); editingBookmarkId = null; $bookmarkForm.style.display = 'none'; renderBookmarks(); $bookmarksOverlay.classList.add('active'); });
+    $btnAddBookmark.addEventListener('click', (e) => { e.stopPropagation(); editingBookmarkId = null; $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkForm.style.display = 'flex'; $bookmarkNote.focus(); renderBookmarks(); });
+    $btnCancelBookmark.addEventListener('click', (e) => { e.stopPropagation(); editingBookmarkId = null; $bookmarkForm.style.display = 'none'; $bookmarkNote.value = ''; autoResizeTextarea(); renderBookmarks(); });
+    $btnSaveBookmark.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const note = $bookmarkNote.value.trim();
+        if (editingBookmarkId) { await dbUpdateBookmark(editingBookmarkId, note); editingBookmarkId = null; }
+        else { const globalPage = lastRawData.globalPage > 0 ? lastRawData.globalPage : 1; await dbAddBookmark({ bookId: currentBookId, globalPage, note }); }
+        $bookmarkForm.style.display = 'none';
+        $bookmarkNote.value = '';
+        autoResizeTextarea();
+        renderBookmarks();
+    });
     $bookmarksOverlay.addEventListener('click', e => { if (e.target === $bookmarksOverlay) { $bookmarksOverlay.classList.remove('active'); $bookmarkForm.style.display = 'none'; editingBookmarkId = null; renderBookmarks(); } });
 
     $btnFullscreen.addEventListener('click', (e) => { e.stopPropagation(); toggleFullscreen(); });
-    $btnBackLibrary.addEventListener('click', () => { if (saveTimer) { clearTimeout(saveTimer); if (lastRawData.globalPage > 0 && currentBookId) dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } closeReader(); });
+    $btnBackLibrary.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (saveTimer) {
+            clearTimeout(saveTimer);
+            if (lastRawData.globalPage > 0 && currentBookId)
+                dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 });
+        }
+        closeReader();
+    });
 
     $uploadFab.addEventListener('click', () => { setTimeout(() => $fileInput.click(), 0); });
-    $fileInput.addEventListener('change', async e => { const file = e.target.files[0]; if (!file) return; if (!file.name.toLowerCase().endsWith('.epub')) { alert('Solo archivos .epub'); $fileInput.value = ''; return; } const book = await uploadAndProcessBook(file); $fileInput.value = ''; if (book) renderLibrary(); });
+    $fileInput.addEventListener('change', async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (!file.name.toLowerCase().endsWith('.epub')) { alert('Solo archivos .epub'); $fileInput.value = ''; return; }
+        const book = await uploadAndProcessBook(file);
+        $fileInput.value = '';
+        if (book) renderLibrary();
+    });
     document.addEventListener('dragover', e => e.preventDefault());
-    document.addEventListener('drop', async e => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file && file.name.endsWith('.epub')) { const book = await uploadAndProcessBook(file); if (book) renderLibrary(); } });
-    window.addEventListener('beforeunload', () => { if (saveTimer && currentBookId && lastRawData.globalPage > 0) { clearTimeout(saveTimer); dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 }); } });
+    document.addEventListener('drop', async e => {
+        e.preventDefault();
+        const file = e.dataTransfer.files[0];
+        if (file && file.name.endsWith('.epub')) {
+            const book = await uploadAndProcessBook(file);
+            if (book) renderLibrary();
+        }
+    });
+    window.addEventListener('beforeunload', () => {
+        if (saveTimer && currentBookId && lastRawData.globalPage > 0) {
+            clearTimeout(saveTimer);
+            dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 });
+        }
+    });
 
-    (async () => { try { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader listo'); } catch (e) { console.error('Error de inicio:', e); alert('No se pudo iniciar la biblioteca.'); } })();
+    (async () => {
+        try { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader listo'); }
+        catch (e) { console.error('Error de inicio:', e); alert('No se pudo iniciar la biblioteca.'); }
+    })();
 })();
 </script>
 </body>
