@@ -100,9 +100,10 @@
             cursor: pointer;
         }
 
+        /* Espaciadores del mismo color que el fondo del texto */
         .reader-spacer {
             height: 30px;
-            background: var(--reader-bg);
+            background: var(--reader-bg);  /* mismo fondo que el área de lectura */
             flex-shrink: 0;
         }
 
@@ -376,52 +377,6 @@
         .processing-card .spinner { width: 40px; height: 40px; border: 3px solid #eee; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .processing-card .msg { font-size: 0.95rem; color: #333; line-height: 1.4; padding: 0 4px; }
-
-        /* Menú contextual de lectura en voz alta */
-        #readaloud-context-menu {
-            display: none;
-            position: fixed;
-            background: var(--surface);
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-            z-index: 25;
-            min-width: 180px;
-            padding: 4px 0;
-        }
-        #readaloud-context-menu.show { display: block; }
-        #readaloud-context-menu .context-menu-item {
-            padding: 10px 16px;
-            font-size: 0.9rem;
-            color: var(--text);
-            cursor: pointer;
-        }
-        #readaloud-context-menu .context-menu-item:active { background: #f0f0f0; }
-
-        /* Barra de control de lectura en voz alta */
-        #readaloud-controls {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            background: #333;
-            color: #fff;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 8px;
-            z-index: 30;
-            gap: 12px;
-        }
-        #readaloud-controls.active { display: flex; }
-        #stop-readaloud {
-            background: #c0392b;
-            border: none;
-            color: #fff;
-            padding: 6px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.9rem;
-        }
     </style>
 </head>
 <body>
@@ -461,6 +416,7 @@
 
     <!-- Barra inferior -->
     <div id="reader-bottombar" class="reader-bar">
+        <!-- Panel de herramientas (desplegable) -->
         <div id="options-panel" class="visible">
             <div id="options-buttons">
                 <button class="opt-btn" id="btn-bookmarks" title="Marcadores">⚐</button>
@@ -474,10 +430,12 @@
                 <button id="btn-search-results" title="Buscar">⌕</button>
             </div>
         </div>
+        <!-- Barra de progreso -->
         <div id="progress-bar-container">
             <div id="progress-bar-fill"></div>
             <div id="chapter-markers"></div>
         </div>
+        <!-- Fila de información inferior -->
         <div class="header-row bottom-info-row">
             <div class="header-col left-time"><span id="device-time">--:--</span></div>
             <div class="header-col center-title"><span id="header-chapter-title">--</span></div>
@@ -502,17 +460,6 @@
 </div>
 
 <div id="back-link-btn" title="Volver al punto anterior">←</div>
-
-<!-- Menú contextual de lectura en voz alta -->
-<div id="readaloud-context-menu">
-    <div class="context-menu-item" id="start-readaloud">Lectura en voz alta</div>
-</div>
-
-<!-- Barra de control de lectura en voz alta -->
-<div id="readaloud-controls">
-    <span style="font-size:0.9rem;">🔊 Leyendo...</span>
-    <button id="stop-readaloud">Detener lectura</button>
-</div>
 
 <script>
 (function() {
@@ -563,10 +510,6 @@
     const $commentTextarea = $('#comment-textarea');
     const $btnSaveComment = $('#btn-save-comment');
     const $btnCancelComment = $('#btn-cancel-comment');
-    const $readaloudContextMenu = $('#readaloud-context-menu');
-    const $startReadaloud = $('#start-readaloud');
-    const $readaloudControls = $('#readaloud-controls');
-    const $stopReadaloud = $('#stop-readaloud');
 
     const DB_NAME = 'epub_reader_v91';
     let db, editingBookmarkId = null;
@@ -644,7 +587,7 @@
     function splitIntoPages(text, charsPerPage=2000) { const pages = []; if (!text?.length) return ['']; let rem = text; while (rem.length > charsPerPage) { let cut = charsPerPage; const slice = rem.substr(charsPerPage,120); const m = slice.match(/[\s.,;:!?¡¿—\-'"»)]/); if (m?.index !== undefined) cut = charsPerPage + m.index + 1; pages.push(rem.substring(0,cut).trim()); rem = rem.substring(cut).trim(); } if (rem) pages.push(rem.trim()); return pages.length ? pages : ['']; }
     function blobToBase64(blob) { return new Promise((res, rej) => { const reader = new FileReader(); reader.onloadend = () => res(reader.result); reader.onerror = rej; reader.readAsDataURL(blob); }); }
 
-    let optionsVisible = true;
+    let optionsVisible = true; // visible por defecto
     function hideOptionsPanel() { optionsVisible = false; $optionsPanel.classList.remove('visible'); }
     function toggleOptionsPanel() { optionsVisible = !optionsVisible; $optionsPanel.classList.toggle('visible', optionsVisible); }
 
@@ -667,13 +610,18 @@
     $bookmarkNote.addEventListener('input', () => { $clearNoteBtn.classList.toggle('visible', $bookmarkNote.value.length > 0); autoResizeTextarea(); });
     $bookmarkNote.addEventListener('click', (e) => e.stopPropagation());
 
+    // --- Barra inferior: clic para alternar panel ---
     $readerBottombar.addEventListener('click', (e) => {
+        // No alternar si se hizo clic en un botón interactivo o en la barra de progreso
         if (e.target.closest('.opt-btn') || e.target.closest('#search-input') || 
             e.target.closest('.clear-input-btn') || e.target.closest('#progress-bar-container') ||
-            e.target.closest('#options-panel')) return;
+            e.target.closest('#options-panel')) {
+            return;
+        }
         toggleOptionsPanel();
     });
 
+    // Evitar que los botones del panel propaguen el clic hacia la barra inferior
     document.querySelectorAll('.opt-btn').forEach(btn => btn.addEventListener('click', (e) => e.stopPropagation()));
     $btnSearchResults.addEventListener('click', (e) => e.stopPropagation());
     $('#progress-bar-container').addEventListener('click', (e) => e.stopPropagation());
@@ -938,7 +886,6 @@
     let currentBookId = null, currentBookData = null, sectionDOMRefs = [], lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 };
     let saveTimer = null, isRestoring = false, scrollRAF = null, lastScroll = -1, bookStyleElement = null;
     let globalCharMapping = null;
-    let textNodeMap = [];  // Array de { node, start, end } para todas las palabras
 
     const FONT_SIZES = [0.9, 1.05, 1.2, 1.4, 1.6];
     let currentFontSizeIndex = 1;
@@ -961,39 +908,6 @@
             applyFontSizeToDocument();
             try { localStorage.setItem('reader_font_size_index', currentFontSizeIndex); } catch(e) {}
         });
-    }
-
-    function buildTextNodeMap() {
-        textNodeMap = [];
-        const walker = document.createTreeWalker($readerContainer, NodeFilter.SHOW_TEXT, null, false);
-        let globalPos = 0;
-        let node;
-        while (node = walker.nextNode()) {
-            const text = node.textContent;
-            const length = text.length;
-            textNodeMap.push({ node, start: globalPos, end: globalPos + length });
-            globalPos += length;
-        }
-    }
-
-    // Obtiene el índice global de caracteres para un nodo y offset dados
-    function getGlobalOffset(node, offset) {
-        for (let entry of textNodeMap) {
-            if (entry.node === node) {
-                return entry.start + offset;
-            }
-        }
-        return -1;
-    }
-
-    // Obtiene el nodo y offset para un índice global de caracteres
-    function getNodeAtGlobalOffset(globalOffset) {
-        for (let entry of textNodeMap) {
-            if (globalOffset >= entry.start && globalOffset < entry.end) {
-                return { node: entry.node, offset: globalOffset - entry.start };
-            }
-        }
-        return null;
     }
 
     function renderChapterMarkers() {
@@ -1027,7 +941,6 @@
         if (saveTimer) clearTimeout(saveTimer);
         if (scrollRAF) cancelAnimationFrame(scrollRAF);
         cleanupScrollDetection();
-        stopReadAloud(); // Detener cualquier lectura previa
         if (bookStyleElement) { bookStyleElement.remove(); bookStyleElement = null; }
         $readerContainer.innerHTML = '';
         sectionDOMRefs = [];
@@ -1100,9 +1013,6 @@
                 });
             }
 
-            // Construir el mapeo de nodos de texto después de cargar el contenido
-            buildTextNodeMap();
-
             $readerContainer.addEventListener('click', e => {
                 const link = e.target.closest('a');
                 if (!link) return;
@@ -1168,202 +1078,6 @@
         }).catch(err => { console.error('Error al abrir libro:', err); alert('Error al cargar el libro.'); });
     }
 
-    // --- LECTURA EN VOZ ALTA ---
-    let speechSynth = window.speechSynthesis;
-    let currentUtterance = null;
-    let readingQueue = [];
-    let readingActive = false;
-    let lastHighlightSpan = null;
-
-    function clearHighlight() {
-        if (lastHighlightSpan && lastHighlightSpan.parentNode) {
-            const parent = lastHighlightSpan.parentNode;
-            while (lastHighlightSpan.firstChild) parent.insertBefore(lastHighlightSpan.firstChild, lastHighlightSpan);
-            parent.removeChild(lastHighlightSpan);
-            parent.normalize();
-            lastHighlightSpan = null;
-        }
-    }
-
-    function highlightWordAt(globalOffset, length) {
-        clearHighlight();
-        const result = getNodeAtGlobalOffset(globalOffset);
-        if (!result) return;
-        const { node, offset } = result;
-        const range = document.createRange();
-        range.setStart(node, Math.min(offset, node.textContent.length));
-        range.setEnd(node, Math.min(offset + length, node.textContent.length));
-        const span = document.createElement('span');
-        span.className = 'temp-highlight';
-        span.style.backgroundColor = '#ffeb3b'; // amarillo suave
-        try {
-            range.surroundContents(span);
-            lastHighlightSpan = span;
-        } catch (e) { return; }
-        // Scroll para mantener visible
-        const rect = span.getBoundingClientRect();
-        const containerRect = $readerContainer.getBoundingClientRect();
-        if (rect.bottom > containerRect.bottom - 50 || rect.top < containerRect.top + 50) {
-            const scrollTarget = rect.top - containerRect.top + $readerContainer.scrollTop - 100;
-            $readerContainer.scrollTo({ top: Math.max(0, scrollTarget), behavior:'smooth' });
-        }
-    }
-
-    function stopReadAloud() {
-        if (readingActive) {
-            speechSynth.cancel();
-            readingActive = false;
-            readingQueue = [];
-            currentUtterance = null;
-            clearHighlight();
-            $readaloudControls.classList.remove('active');
-            exitFullscreen();
-        }
-    }
-
-    async function startReadAloudFromGlobalOffset(startOffset) {
-        if (!currentBookData) return;
-        stopReadAloud(); // Detener cualquier lectura previa
-
-        // Activar pantalla completa
-        await requestFullscreen();
-        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-            // Si fullscreen no funciona (p.ej. en algunos navegadores), continuamos igual
-        }
-
-        // Obtener el texto completo desde startOffset hasta el final
-        const fullText = $readerContainer.textContent || '';
-        const remainingText = fullText.substring(startOffset);
-        if (!remainingText.trim()) {
-            alert('No hay texto para leer.');
-            exitFullscreen();
-            return;
-        }
-
-        // Dividir en trozos de 30000 caracteres (límite de utterance)
-        const chunkSize = 30000;
-        const chunks = [];
-        for (let i = 0; i < remainingText.length; i += chunkSize) {
-            chunks.push(remainingText.substring(i, i + chunkSize));
-        }
-
-        readingQueue = chunks.map((chunk, idx) => ({ text: chunk, startGlobalOffset: startOffset + idx * chunkSize }));
-        readingActive = true;
-        $readaloudControls.classList.add('active');
-
-        speakNextChunk();
-    }
-
-    function speakNextChunk() {
-        if (!readingActive || readingQueue.length === 0) {
-            stopReadAloud();
-            return;
-        }
-        const chunk = readingQueue.shift();
-        const utterance = new SpeechSynthesisUtterance(chunk.text);
-        utterance.lang = 'es-ES';
-        // Seleccionar una voz en español si está disponible
-        const voices = speechSynth.getVoices();
-        const spanishVoice = voices.find(v => v.lang.startsWith('es'));
-        if (spanishVoice) utterance.voice = spanishVoice;
-
-        currentUtterance = utterance;
-
-        utterance.onboundary = (e) => {
-            if (e.name === 'word' && e.charIndex !== undefined) {
-                const globalIndex = chunk.startGlobalOffset + e.charIndex;
-                // Obtener la longitud de la palabra actual (aproximada hasta el siguiente espacio)
-                const wordEnd = chunk.text.indexOf(' ', e.charIndex + 1);
-                const wordLength = wordEnd > 0 ? wordEnd - e.charIndex : chunk.text.length - e.charIndex;
-                highlightWordAt(globalIndex, Math.max(1, wordLength));
-            }
-        };
-
-        utterance.onend = () => {
-            currentUtterance = null;
-            if (readingActive) speakNextChunk();
-        };
-
-        utterance.onerror = (e) => {
-            console.error('Error de lectura:', e);
-            stopReadAloud();
-        };
-
-        speechSynth.speak(utterance);
-    }
-
-    // --- Eventos para el menú contextual ---
-    let contextMenuTargetElement = null;
-
-    function showReadAloudMenu(x, y, targetElement) {
-        $readaloudContextMenu.style.left = x + 'px';
-        $readaloudContextMenu.style.top = y + 'px';
-        $readaloudContextMenu.classList.add('show');
-        contextMenuTargetElement = targetElement;
-    }
-
-    function hideReadAloudMenu() {
-        $readaloudContextMenu.classList.remove('show');
-        contextMenuTargetElement = null;
-    }
-
-    $readerContainer.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        const target = e.target;
-        // Buscar el párrafo o elemento de bloque más cercano
-        let block = target.closest('p, div, h1, h2, h3, h4, h5, h6, blockquote');
-        if (!block) block = target;
-        showReadAloudMenu(e.clientX, e.clientY, block);
-    });
-
-    // Para dispositivos táctiles: pulsación larga
-    let longPressTimer;
-    $readerContainer.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 1) {
-            longPressTimer = setTimeout(() => {
-                const touch = e.touches[0];
-                const target = document.elementFromPoint(touch.clientX, touch.clientY);
-                let block = target.closest('p, div, h1, h2, h3, h4, h5, h6, blockquote');
-                if (!block) block = target;
-                showReadAloudMenu(touch.clientX, touch.clientY, block);
-            }, 500);
-        }
-    });
-    $readerContainer.addEventListener('touchend', () => clearTimeout(longPressTimer));
-    $readerContainer.addEventListener('touchmove', () => clearTimeout(longPressTimer));
-
-    $startReadaloud.addEventListener('click', (e) => {
-        e.stopPropagation();
-        hideReadAloudMenu();
-        if (!contextMenuTargetElement) return;
-
-        // Obtener el primer nodo de texto dentro del elemento
-        const firstTextNode = (function findFirstTextNode(el) {
-            if (el.nodeType === Node.TEXT_NODE) return el;
-            for (let child of el.childNodes) {
-                const found = findFirstTextNode(child);
-                if (found) return found;
-            }
-            return null;
-        })(contextMenuTargetElement);
-
-        if (!firstTextNode) return;
-
-        const startGlobal = getGlobalOffset(firstTextNode, 0);
-        if (startGlobal < 0) return;
-
-        startReadAloudFromGlobalOffset(startGlobal);
-    });
-
-    $stopReadaloud.addEventListener('click', stopReadAloud);
-
-    document.addEventListener('click', (e) => {
-        if (!$readaloudContextMenu.contains(e.target)) {
-            hideReadAloudMenu();
-        }
-    });
-
-    // --- Resto del código existente (sin cambios) ---
     function getGlobalPageFromCharIndex(charIndex) {
         if (!globalCharMapping) return { globalPage:1, percent:0 };
         const total = currentBookData.structure.totalPages || 1;
@@ -1539,7 +1253,6 @@
     }
 
     function closeReader() {
-        stopReadAloud();
         if (window._clockInterval) { clearInterval(window._clockInterval); window._clockInterval = null; }
         if (isClosingReader) return;
         isClosingReader = true;
@@ -1549,7 +1262,6 @@
         currentBookId = null;
         currentBookData = null;
         globalCharMapping = null;
-        textNodeMap = [];
         lastRawData = { globalPage: -1, chapterIdx: -1, chapterPage: -1 };
         isRestoring = false;
         $readerScreen.classList.add('hidden');
