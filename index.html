@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>HTML ePub Reader</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="theme-color" content="#eaeaea">
+    <link rel="manifest" id="manifest-link" href="data:application/json;base64,">
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <style>
         :root {
@@ -97,13 +101,11 @@
         #reader-bottombar {
             display: flex;
             flex-direction: column;
-            cursor: pointer;
         }
 
-        /* Espaciadores del mismo color que el fondo del texto */
         .reader-spacer {
             height: 30px;
-            background: var(--reader-bg);  /* mismo fondo que el área de lectura */
+            background: var(--reader-bg);
             flex-shrink: 0;
         }
 
@@ -199,7 +201,6 @@
             background: var(--reader-bar);
             padding: 0;
             color: var(--text);
-            cursor: default;
         }
         #options-panel.visible {
             max-height: calc(var(--options-height) + var(--search-row-height));
@@ -389,7 +390,6 @@
 </div>
 
 <div id="reader-screen" class="screen hidden">
-    <!-- Barra superior -->
     <div id="reader-topbar" class="reader-bar">
         <div class="header-row top-row">
             <div class="header-col left-time">
@@ -406,17 +406,13 @@
         </div>
     </div>
 
-    <!-- Espaciador del color del fondo -->
     <div class="reader-spacer"></div>
 
     <div id="reader-container"></div>
 
-    <!-- Espaciador del color del fondo -->
     <div class="reader-spacer"></div>
 
-    <!-- Barra inferior -->
     <div id="reader-bottombar" class="reader-bar">
-        <!-- Panel de herramientas (desplegable) -->
         <div id="options-panel" class="visible">
             <div id="options-buttons">
                 <button class="opt-btn" id="btn-bookmarks" title="Marcadores">⚐</button>
@@ -430,12 +426,10 @@
                 <button id="btn-search-results" title="Buscar">⌕</button>
             </div>
         </div>
-        <!-- Barra de progreso -->
         <div id="progress-bar-container">
             <div id="progress-bar-fill"></div>
             <div id="chapter-markers"></div>
         </div>
-        <!-- Fila de información inferior -->
         <div class="header-row bottom-info-row">
             <div class="header-col left-time"><span id="device-time">--:--</span></div>
             <div class="header-col center-title"><span id="header-chapter-title">--</span></div>
@@ -587,7 +581,7 @@
     function splitIntoPages(text, charsPerPage=2000) { const pages = []; if (!text?.length) return ['']; let rem = text; while (rem.length > charsPerPage) { let cut = charsPerPage; const slice = rem.substr(charsPerPage,120); const m = slice.match(/[\s.,;:!?¡¿—\-'"»)]/); if (m?.index !== undefined) cut = charsPerPage + m.index + 1; pages.push(rem.substring(0,cut).trim()); rem = rem.substring(cut).trim(); } if (rem) pages.push(rem.trim()); return pages.length ? pages : ['']; }
     function blobToBase64(blob) { return new Promise((res, rej) => { const reader = new FileReader(); reader.onloadend = () => res(reader.result); reader.onerror = rej; reader.readAsDataURL(blob); }); }
 
-    let optionsVisible = true; // visible por defecto
+    let optionsVisible = true;
     function hideOptionsPanel() { optionsVisible = false; $optionsPanel.classList.remove('visible'); }
     function toggleOptionsPanel() { optionsVisible = !optionsVisible; $optionsPanel.classList.toggle('visible', optionsVisible); }
 
@@ -603,28 +597,10 @@
     document.addEventListener('fullscreenchange', () => hideOptionsPanel());
     document.addEventListener('webkitfullscreenchange', () => hideOptionsPanel());
 
-    $clearSearchBtn.addEventListener('click', (e) => { e.stopPropagation(); $searchInput.value = ''; $clearSearchBtn.classList.remove('visible'); $searchInput.focus(); });
+    $clearSearchBtn.addEventListener('click', () => { $searchInput.value = ''; $clearSearchBtn.classList.remove('visible'); $searchInput.focus(); });
     $searchInput.addEventListener('input', () => { $clearSearchBtn.classList.toggle('visible', $searchInput.value.length > 0); });
-    $searchInput.addEventListener('click', (e) => e.stopPropagation());
-    $clearNoteBtn.addEventListener('click', (e) => { e.stopPropagation(); $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkNote.focus(); });
+    $clearNoteBtn.addEventListener('click', () => { $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkNote.focus(); });
     $bookmarkNote.addEventListener('input', () => { $clearNoteBtn.classList.toggle('visible', $bookmarkNote.value.length > 0); autoResizeTextarea(); });
-    $bookmarkNote.addEventListener('click', (e) => e.stopPropagation());
-
-    // --- Barra inferior: clic para alternar panel ---
-    $readerBottombar.addEventListener('click', (e) => {
-        // No alternar si se hizo clic en un botón interactivo o en la barra de progreso
-        if (e.target.closest('.opt-btn') || e.target.closest('#search-input') || 
-            e.target.closest('.clear-input-btn') || e.target.closest('#progress-bar-container') ||
-            e.target.closest('#options-panel')) {
-            return;
-        }
-        toggleOptionsPanel();
-    });
-
-    // Evitar que los botones del panel propaguen el clic hacia la barra inferior
-    document.querySelectorAll('.opt-btn').forEach(btn => btn.addEventListener('click', (e) => e.stopPropagation()));
-    $btnSearchResults.addEventListener('click', (e) => e.stopPropagation());
-    $('#progress-bar-container').addEventListener('click', (e) => e.stopPropagation());
 
     function showCommentEditor(bookId, currentComment) {
         currentBookCommentId = bookId;
@@ -902,8 +878,7 @@
 
     const $btnFontSize = document.getElementById('btn-font-size');
     if ($btnFontSize) {
-        $btnFontSize.addEventListener('click', (e) => {
-            e.stopPropagation();
+        $btnFontSize.addEventListener('click', () => {
             currentFontSizeIndex = (currentFontSizeIndex + 1) % FONT_SIZES.length;
             applyFontSizeToDocument();
             try { localStorage.setItem('reader_font_size_index', currentFontSizeIndex); } catch(e) {}
@@ -1013,52 +988,57 @@
                 });
             }
 
+            // UNIFICADO: clic en el área de texto
             $readerContainer.addEventListener('click', e => {
                 const link = e.target.closest('a');
-                if (!link) return;
-                const href = link.getAttribute('href');
-                if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-                    if (!link.getAttribute('target')) link.setAttribute('target', '_blank');
-                    return;
-                }
-                e.preventDefault();
-                e.stopPropagation();
-                lastLinkScroll = $readerContainer.scrollTop;
-                $backLinkBtn.classList.add('show');
-                if (href && href.startsWith('#') && href.length > 1) {
-                    const id = href.substring(1);
-                    const target = document.getElementById(id) || $readerContainer.querySelector(`[name="${id}"]`);
-                    if (target) {
-                        const rect = target.getBoundingClientRect();
-                        const containerRect = $readerContainer.getBoundingClientRect();
-                        const top = rect.top - containerRect.top + $readerContainer.scrollTop;
-                        $readerContainer.scrollTo({ top, behavior:'smooth' });
+                if (link) {
+                    const href = link.getAttribute('href');
+                    if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+                        if (!link.getAttribute('target')) link.setAttribute('target', '_blank');
                         return;
                     }
-                }
-                const chapterLink = link.getAttribute('data-chapter-link');
-                if (chapterLink !== null) {
-                    const targetIndex = parseInt(chapterLink, 10);
-                    const markers = $readerContainer.querySelectorAll('.chapter-marker');
-                    if (markers[targetIndex]) {
-                        const markerRect = markers[targetIndex].getBoundingClientRect();
-                        const containerRect = $readerContainer.getBoundingClientRect();
-                        const top = markerRect.top - containerRect.top + $readerContainer.scrollTop;
-                        $readerContainer.scrollTo({ top, behavior:'smooth' });
+                    e.preventDefault();
+                    e.stopPropagation();
+                    lastLinkScroll = $readerContainer.scrollTop;
+                    $backLinkBtn.classList.add('show');
+                    if (href && href.startsWith('#') && href.length > 1) {
+                        const id = href.substring(1);
+                        const target = document.getElementById(id) || $readerContainer.querySelector(`[name="${id}"]`);
+                        if (target) {
+                            const rect = target.getBoundingClientRect();
+                            const containerRect = $readerContainer.getBoundingClientRect();
+                            const top = rect.top - containerRect.top + $readerContainer.scrollTop;
+                            $readerContainer.scrollTo({ top, behavior:'smooth' });
+                            return;
+                        }
                     }
+                    const chapterLink = link.getAttribute('data-chapter-link');
+                    if (chapterLink !== null) {
+                        const targetIndex = parseInt(chapterLink, 10);
+                        const markers = $readerContainer.querySelectorAll('.chapter-marker');
+                        if (markers[targetIndex]) {
+                            const markerRect = markers[targetIndex].getBoundingClientRect();
+                            const containerRect = $readerContainer.getBoundingClientRect();
+                            const top = markerRect.top - containerRect.top + $readerContainer.scrollTop;
+                            $readerContainer.scrollTo({ top, behavior:'smooth' });
+                        }
+                    }
+                } else {
+                    // No es enlace: ocultar botón volver si visible y alternar panel de herramientas
+                    if ($backLinkBtn.classList.contains('show')) {
+                        $backLinkBtn.classList.remove('show');
+                    }
+                    toggleOptionsPanel();
                 }
             });
 
+            // Botón volver
             $backLinkBtn.addEventListener('click', () => {
                 if (lastLinkScroll !== null) {
                     $readerContainer.scrollTo({ top: lastLinkScroll, behavior:'smooth' });
                     lastLinkScroll = null;
                 }
                 $backLinkBtn.classList.remove('show');
-            });
-            $readerContainer.addEventListener('click', (e) => {
-                if (e.target.closest('a')) return;
-                if ($backLinkBtn.classList.contains('show')) $backLinkBtn.classList.remove('show');
             });
 
             history.pushState({ screen:'reader', bookId }, '', '#reader-'+bookId);
@@ -1348,7 +1328,7 @@
         });
     }
 
-    $btnSearchResults.addEventListener('click', (e) => { e.stopPropagation(); const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); });
+    $btnSearchResults.addEventListener('click', () => { const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); });
     $searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') { const term = $searchInput.value.trim(); performSearch(term); $searchResultsOverlay.classList.add('active'); } });
     $searchResultsOverlay.addEventListener('click', e => { if (e.target === $searchResultsOverlay) $searchResultsOverlay.classList.remove('active'); });
 
@@ -1445,8 +1425,7 @@
         }
     }
 
-    $btnChapters.addEventListener('click', (e) => {
-        e.stopPropagation();
+    $btnChapters.addEventListener('click', () => {
         measureSectionPositions();
         const items = buildFlatIndex();
         if (items.length === 0) {
@@ -1494,11 +1473,10 @@
         $bookmarksList.appendChild(table);
     }
 
-    $btnBookmarks.addEventListener('click', (e) => { e.stopPropagation(); editingBookmarkId = null; $bookmarkForm.style.display = 'none'; renderBookmarks(); $bookmarksOverlay.classList.add('active'); });
-    $btnAddBookmark.addEventListener('click', (e) => { e.stopPropagation(); editingBookmarkId = null; $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkForm.style.display = 'flex'; $bookmarkNote.focus(); renderBookmarks(); });
-    $btnCancelBookmark.addEventListener('click', (e) => { e.stopPropagation(); editingBookmarkId = null; $bookmarkForm.style.display = 'none'; $bookmarkNote.value = ''; autoResizeTextarea(); renderBookmarks(); });
-    $btnSaveBookmark.addEventListener('click', async (e) => {
-        e.stopPropagation();
+    $btnBookmarks.addEventListener('click', () => { editingBookmarkId = null; $bookmarkForm.style.display = 'none'; renderBookmarks(); $bookmarksOverlay.classList.add('active'); });
+    $btnAddBookmark.addEventListener('click', () => { editingBookmarkId = null; $bookmarkNote.value = ''; $clearNoteBtn.classList.remove('visible'); autoResizeTextarea(); $bookmarkForm.style.display = 'flex'; $bookmarkNote.focus(); renderBookmarks(); });
+    $btnCancelBookmark.addEventListener('click', () => { editingBookmarkId = null; $bookmarkForm.style.display = 'none'; $bookmarkNote.value = ''; autoResizeTextarea(); renderBookmarks(); });
+    $btnSaveBookmark.addEventListener('click', async () => {
         const note = $bookmarkNote.value.trim();
         if (editingBookmarkId) { await dbUpdateBookmark(editingBookmarkId, note); editingBookmarkId = null; }
         else { const globalPage = lastRawData.globalPage > 0 ? lastRawData.globalPage : 1; await dbAddBookmark({ bookId: currentBookId, globalPage, note }); }
@@ -1509,9 +1487,8 @@
     });
     $bookmarksOverlay.addEventListener('click', e => { if (e.target === $bookmarksOverlay) { $bookmarksOverlay.classList.remove('active'); $bookmarkForm.style.display = 'none'; editingBookmarkId = null; renderBookmarks(); } });
 
-    $btnFullscreen.addEventListener('click', (e) => { e.stopPropagation(); toggleFullscreen(); });
-    $btnBackLibrary.addEventListener('click', (e) => {
-        e.stopPropagation();
+    $btnFullscreen.addEventListener('click', () => { toggleFullscreen(); });
+    $btnBackLibrary.addEventListener('click', () => {
         if (saveTimer) {
             clearTimeout(saveTimer);
             if (lastRawData.globalPage > 0 && currentBookId)
@@ -1544,6 +1521,76 @@
             dbSaveProgress(currentBookId, { globalPage: lastRawData.globalPage, spineIndex: lastRawData.chapterIdx, pageInChapter: lastRawData.chapterPage, scrollTop: $readerContainer.scrollTop, totalPages: currentBookData?.structure?.totalPages || 0 });
         }
     });
+
+    // ================== PWA / Web App ==================
+    function generateAppIcon() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 192; canvas.height = 192;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#f5f5f5';
+        ctx.fillRect(0, 0, 192, 192);
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(40, 40, 112, 112);
+        ctx.fillStyle = '#FFF8DC';
+        ctx.fillRect(60, 40, 40, 112);
+        ctx.fillStyle = '#654321';
+        ctx.fillRect(40, 40, 20, 112);
+        ctx.strokeStyle = '#ccc';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 5; i++) {
+            ctx.beginPath();
+            ctx.moveTo(65, 60 + i*20);
+            ctx.lineTo(95, 60 + i*20);
+            ctx.stroke();
+        }
+        return canvas.toDataURL('image/png');
+    }
+
+    function setupManifest() {
+        const icon = generateAppIcon();
+        const manifest = {
+            name: 'HTML ePub Reader',
+            short_name: 'ePub Reader',
+            description: 'Lector de libros ePub sin conexión',
+            start_url: location.href.split('?')[0],
+            display: 'standalone',
+            orientation: 'any',
+            theme_color: '#eaeaea',
+            background_color: '#f5f5f5',
+            icons: [
+                { src: icon, sizes: '192x192', type: 'image/png' },
+                { src: icon, sizes: '512x512', type: 'image/png' }
+            ]
+        };
+        const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+        const manifestUrl = URL.createObjectURL(blob);
+        $('#manifest-link').setAttribute('href', manifestUrl);
+    }
+
+    function registerServiceWorker() {
+        if ('serviceWorker' in navigator) {
+            const swCode = `
+                const CACHE_NAME = 'epub-reader-v1';
+                const urlsToCache = [location.href];
+                self.addEventListener('install', event => {
+                    event.waitUntil(
+                        caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
+                    );
+                });
+                self.addEventListener('fetch', event => {
+                    event.respondWith(
+                        caches.match(event.request).then(response => response || fetch(event.request))
+                    );
+                });
+            `;
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+            navigator.serviceWorker.register(swUrl).catch(() => {});
+        }
+    }
+
+    setupManifest();
+    registerServiceWorker();
 
     (async () => {
         try { await openDB(); await renderLibrary(); console.log('📚 HTML ePub Reader listo'); }
